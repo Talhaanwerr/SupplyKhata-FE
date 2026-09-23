@@ -72,6 +72,13 @@ function isProtectedRoute(pathname: string): boolean {
  */
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Same-origin API rewrite to Railway — must pass through (runs before rewrite).
+  // Gating these redirects POST /api/v1/auth/login → /login?redirect=... → 405.
+  if (pathname.startsWith("/api/v1")) {
+    return NextResponse.next();
+  }
+
   const cookieHeader = request.headers.get("cookie") ?? "";
   const session = parseSessionCookie(cookieHeader);
   const isAuthenticated = session !== null;
@@ -119,5 +126,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|api/v1|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };
