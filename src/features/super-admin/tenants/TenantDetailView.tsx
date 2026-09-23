@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { Loader2, ShieldOff, ShieldCheck, XCircle, AlertCircle, Trash2 } from "lucide-react";
+import { Loader2, ShieldOff, ShieldCheck, XCircle, AlertCircle, Trash2, Mail } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import { tenantsApi } from "@/lib/tenants-api";
 import { TENANTS_QUERY_KEY, TENANT_DETAIL_QUERY_KEY } from "@/constants/query-keys";
 import { ApiError } from "@/lib/api-error";
@@ -21,12 +22,15 @@ type StatusAction = "suspend" | "activate" | "cancel";
 export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
   const qc = useQueryClient();
   const router = useRouter();
+  const { toast } = useToast();
   const [dialog, setDialog] = useState<StatusAction | null>(null);
   const [isActing, setIsActing] = useState(false);
   const [actionError, setActionError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [resendOpen, setResendOpen] = useState(false);
+  const [isResending, setIsResending] = useState(false);
 
   const {
     data: res,
@@ -71,6 +75,28 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
     }
   }
 
+  async function handleResendInvite() {
+    setIsResending(true);
+    setActionError("");
+    try {
+      const result = await tenantsApi.resendOwnerInvite(tenantId);
+      const email = result.data?.owner.email ?? tenant?.owner?.email ?? "owner";
+      toast({
+        title: "Invite sent",
+        description: `Invite email sent to ${email}.`,
+        variant: "success",
+      });
+      await qc.invalidateQueries({ queryKey: [TENANT_DETAIL_QUERY_KEY, tenantId] });
+      setResendOpen(false);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to resend invite email.";
+      setActionError(message);
+      toast({ title: "Invite not sent", description: message, variant: "error" });
+    } finally {
+      setIsResending(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -89,12 +115,16 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
   }
 
   const initials = tenant.name.slice(0, 2).toUpperCase();
+  const memberCount = tenant._count?.members ?? tenant._count?.users ?? "—";
+  const canResendInvite = !!tenant.owner && tenant.status !== "CANCELLED";
+  const ownerNeedsAccept =
+    tenant.owner?.memberStatus === "INVITED" || tenant.owner?.emailVerified === false;
 
   const details = [
     { label: "Slug", value: tenant.slug },
     { label: "Domain", value: tenant.domain ?? "—" },
     { label: "Plan", value: tenant.subscriptions?.[0]?.plan?.name ?? "—" },
-    { label: "Users", value: String(tenant._count?.users ?? "—") },
+    { label: "Users", value: String(memberCount) },
     { label: "Timezone", value: tenant.timezone ?? "—" },
     { label: "Created", value: new Date(tenant.createdAt).toLocaleDateString() },
   ];
@@ -125,6 +155,12 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {canResendInvite && (
+              <Button variant="outline" size="sm" onClick={() => setResendOpen(true)}>
+                <Mail className="h-4 w-4 text-blue-600" />
+                Resend invite
+              </Button>
+            )}
             {tenant.status !== "ACTIVE" && (
               <Button variant="outline" size="sm" onClick={() => setDialog("activate")}>
                 <ShieldCheck className="h-4 w-4 text-green-600" />
@@ -146,6 +182,36 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
           </div>
         </div>
       </div>
+
+      {/* Owner card */}
+      {tenant.owner && (
+        <div className="rounded-xl border border-slate-200 bg-white p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-slate-700">Workspace owner</h3>
+              <p className="text-sm font-medium text-slate-900">
+                {tenant.owner.firstName} {tenant.owner.lastName}
+              </p>
+              <p className="text-sm text-slate-500">{tenant.owner.email}</p>
+              <p className="mt-1 text-xs text-slate-400">
+                Membership: {tenant.owner.memberStatus}
+                {ownerNeedsAccept ? " · Invite not accepted yet" : ""}
+              </p>
+            </div>
+            {canResendInvite && (
+              <Button variant="outline" size="sm" onClick={() => setResendOpen(true)}>
+                <Mail className="h-4 w-4" />
+                Resend invite
+              </Button>
+            )}
+          </div>
+          {ownerNeedsAccept && (
+            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Owner has not set a password yet. Resend invite if the email failed or was missed.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Details grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -191,6 +257,20 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
           Delete Tenant
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={resendOpen}
+        onClose={() => setResendOpen(false)}
+        onConfirm={handleResendInvite}
+        title="Resend owner invite"
+        description={
+          tenant.owner
+            ? `Send a fresh invite email to ${tenant.owner.email}? Previous unused invite links for this workspace will be invalidated.`
+            : "Send a fresh invite email to the workspace owner?"
+        }
+        confirmLabel="Send invite"
+        isLoading={isResending}
+      />
 
       {/* Confirm dialogs */}
       <ConfirmDialog

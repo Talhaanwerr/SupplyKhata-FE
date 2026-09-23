@@ -61,12 +61,13 @@ export function CreateTenantForm() {
       });
       qc.invalidateQueries({ queryKey: [TENANTS_QUERY_KEY] });
       const ownerEmail = res.data?.owner?.email ?? data.ownerEmail;
+      const tenantId = res.data?.id;
       toast({
         title: "Tenant created (Pending)",
-        description: `Invite sent to ${ownerEmail}. Activate the tenant after they set their password so they can access the dashboard.`,
+        description: `Owner ${ownerEmail} was onboarded. If they did not get the email, open the tenant and use Resend invite.`,
         variant: "success",
       });
-      router.push("/super-admin/tenants");
+      router.push(tenantId ? `/super-admin/tenants/${tenantId}` : "/super-admin/tenants");
     } catch (err) {
       setError("root", {
         message: err instanceof ApiError ? err.message : "Failed to create tenant.",

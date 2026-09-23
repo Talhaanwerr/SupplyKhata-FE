@@ -39,7 +39,15 @@ export interface TenantDetail extends TenantListItem {
     currency: string;
     invoicePrefix: string;
   } | null;
-  _count: { users: number };
+  _count: { users?: number; members?: number };
+  owner: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    memberStatus: string;
+    emailVerified: boolean;
+  } | null;
 }
 
 /** POST /tenants */

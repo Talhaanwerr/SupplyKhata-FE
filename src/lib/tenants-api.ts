@@ -33,5 +33,14 @@ export const tenantsApi = {
 
   cancel: (id: string) => apiClient.patch<ApiEnvelope<TenantListItem>>(`/tenants/${id}/cancel`),
 
+  resendOwnerInvite: (id: string) =>
+    apiClient.post<
+      ApiEnvelope<{
+        emailSent: boolean;
+        kind: "invite" | "join";
+        owner: { id: string; email: string; firstName: string; lastName: string };
+      }>
+    >(`/tenants/${id}/resend-owner-invite`),
+
   delete: (id: string) => apiClient.delete<void>(`/tenants/${id}`),
 };
