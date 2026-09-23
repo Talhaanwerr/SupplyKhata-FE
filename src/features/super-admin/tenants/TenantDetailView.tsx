@@ -187,16 +187,39 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
       {tenant.owner && (
         <div className="rounded-xl border border-slate-200 bg-white p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="mb-1 text-sm font-semibold text-slate-700">Workspace owner</h3>
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-slate-700">Workspace owner</h3>
               <p className="text-sm font-medium text-slate-900">
                 {tenant.owner.firstName} {tenant.owner.lastName}
               </p>
               <p className="text-sm text-slate-500">{tenant.owner.email}</p>
-              <p className="mt-1 text-xs text-slate-400">
-                Membership: {tenant.owner.memberStatus}
-                {ownerNeedsAccept ? " · Invite not accepted yet" : ""}
-              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span
+                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    tenant.owner.emailVerified
+                      ? "bg-green-100 text-green-800"
+                      : "bg-amber-100 text-amber-800"
+                  }`}
+                >
+                  {tenant.owner.emailVerified ? "Email verified" : "Email not verified"}
+                </span>
+                <span
+                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    tenant.owner.memberStatus === "ACTIVE"
+                      ? "bg-green-100 text-green-800"
+                      : tenant.owner.memberStatus === "INVITED"
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  Membership: {tenant.owner.memberStatus}
+                </span>
+              </div>
+              {tenant.owner.emailVerified && tenant.owner.emailVerifiedAt && (
+                <p className="text-xs text-slate-400">
+                  Verified {new Date(tenant.owner.emailVerifiedAt).toLocaleString()}
+                </p>
+              )}
             </div>
             {canResendInvite && (
               <Button variant="outline" size="sm" onClick={() => setResendOpen(true)}>
@@ -207,9 +230,17 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
           </div>
           {ownerNeedsAccept && (
             <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Owner has not set a password yet. Resend invite if the email failed or was missed.
+              Owner has not accepted the invite / set a password yet. Email stays unverified until
+              they open the invite link and set their password. Use Resend invite if the email
+              failed or was missed.
             </p>
           )}
+        </div>
+      )}
+
+      {!tenant.owner && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          No owner assigned on this tenant.
         </div>
       )}
 

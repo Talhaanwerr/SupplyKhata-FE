@@ -47,6 +47,7 @@ export interface TenantDetail extends TenantListItem {
     lastName: string;
     memberStatus: string;
     emailVerified: boolean;
+    emailVerifiedAt?: string | null;
   } | null;
 }
 
