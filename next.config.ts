@@ -25,18 +25,39 @@ function apiConnectOrigin(): string {
   }
 }
 
+/**
+ * Real Nest API origin (Railway). Used for rewrites + CSP when the browser
+ * calls the FE origin (`NEXT_PUBLIC_API_URL` = https://fe.vercel.app/api/v1)
+ * so refresh cookies stay first-party.
+ */
+function backendOrigin(): string | null {
+  const raw = process.env.API_BACKEND_URL?.trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    throw new Error(
+      `API_BACKEND_URL is invalid: "${raw}". Use origin only, e.g. https://xxx.up.railway.app`
+    );
+  }
+}
+
+const beOrigin = backendOrigin();
+const feApiOrigin = apiConnectOrigin();
+const connectExtra = [feApiOrigin, beOrigin].filter(Boolean).join(" ");
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-  `img-src 'self' data: blob: https: ${apiConnectOrigin()}`,
+  `img-src 'self' data: blob: https: ${connectExtra}`,
   "font-src 'self' data:",
   // Next.js requires unsafe-inline for some styles in App Router; avoid unsafe-eval in prod
   isProd ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
-  `connect-src 'self' ${apiConnectOrigin()}${isProd ? "" : " ws: wss:"}`,
+  `connect-src 'self' ${connectExtra}${isProd ? "" : " ws: wss:"}`,
 ].join("; ");
 
 const nextConfig: NextConfig = {
@@ -45,6 +66,20 @@ const nextConfig: NextConfig = {
   // only the files needed at runtime (no node_modules copy required).
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname),
+  /**
+   * Same-origin API proxy: browser → /api/v1/* on Vercel → Railway Nest.
+   * Makes the httpOnly refresh cookie first-party (fixes cross-site logout).
+   * Set API_BACKEND_URL on Vercel; leave unset for local (call BE directly).
+   */
+  async rewrites() {
+    if (!beOrigin) return [];
+    return [
+      {
+        source: "/api/v1/:path*",
+        destination: `${beOrigin}/api/v1/:path*`,
+      },
+    ];
+  },
   async headers() {
     return [
       {
