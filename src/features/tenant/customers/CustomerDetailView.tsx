@@ -19,6 +19,9 @@ import { PERMISSIONS } from "@/constants/permissions";
 import { CUSTOMER_DETAIL_QUERY_KEY, CUSTOMERS_QUERY_KEY } from "@/constants/query-keys";
 import { CustomerFormModal } from "./CustomerFormModal";
 import { CustomerLedgerTab } from "./CustomerLedgerTab";
+import { CustomerContainerBalanceTab } from "./CustomerContainerBalanceTab";
+import { useFeatureFlag } from "@/hooks/use-feature-flag";
+import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 
 type Tab = "pricing" | "ledger" | "containers";
 
@@ -27,6 +30,8 @@ export function CustomerDetailView() {
   const customerId = params.id;
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("pricing");
+  const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
+  const activeTab: Tab = tab === "containers" && !containersEnabled ? "pricing" : tab;
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const qc = useQueryClient();
@@ -137,7 +142,7 @@ export function CustomerDetailView() {
           [
             ["pricing", "Pricing"],
             ["ledger", "Ledger"],
-            ["containers", "Container Balance"],
+            ...(containersEnabled ? ([["containers", "Container Balance"]] as const) : []),
           ] as const
         ).map(([key, label]) => (
           <button
@@ -145,7 +150,7 @@ export function CustomerDetailView() {
             type="button"
             onClick={() => setTab(key)}
             className={`border-b-2 px-3 py-2 text-sm font-medium ${
-              tab === key
+              activeTab === key
                 ? "border-slate-900 text-slate-900"
                 : "border-transparent text-slate-500 hover:text-slate-800"
             }`}
@@ -155,7 +160,7 @@ export function CustomerDetailView() {
         ))}
       </div>
 
-      {tab === "pricing" && (
+      {activeTab === "pricing" && (
         <div className="rounded-xl border border-slate-200 bg-white">
           {customer.productPrices.length === 0 ? (
             <EmptyState
@@ -189,7 +194,7 @@ export function CustomerDetailView() {
         </div>
       )}
 
-      {tab === "ledger" && (
+      {activeTab === "ledger" && (
         <CustomerLedgerTab
           customerId={customerId}
           promisedDueDate={customer.promisedDueDate}
@@ -197,11 +202,8 @@ export function CustomerDetailView() {
         />
       )}
 
-      {tab === "containers" && (
-        <EmptyState
-          title="Container balance coming soon"
-          description="Returnable container tracking will be available with deliveries."
-        />
+      {tab === "containers" && containersEnabled && (
+        <CustomerContainerBalanceTab customerId={customerId} />
       )}
 
       <CustomerFormModal

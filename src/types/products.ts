@@ -1,3 +1,5 @@
+export type ProductBaseUnit = "PCS" | "LTR" | "KG";
+
 export interface Product {
   id: string;
   tenantId: string;
@@ -8,7 +10,14 @@ export interface Product {
   isActive: boolean;
   isReturnable: boolean;
   containerType: string | null;
+  /** Price per baseUnit (PCS / LTR / KG). */
   defaultSellingPrice: number;
+  baseUnit: ProductBaseUnit;
+  unitsPerPack: number | null;
+  packLabel: string | null;
+  containerCapacity: number | null;
+  allowFractionalQty: boolean;
+  hasPackHelper: boolean;
   currentCost: number | null;
   createdAt: string;
   updatedAt: string;
@@ -33,10 +42,15 @@ export interface CurrentCostResult {
 
 export interface CreateProductPayload {
   name: string;
+  baseUnit: ProductBaseUnit;
   volume?: number | null;
   unit?: string | null;
   sku?: string | null;
   defaultSellingPrice: number;
+  unitsPerPack?: number | null;
+  packLabel?: string | null;
+  containerCapacity?: number | null;
+  allowFractionalQty?: boolean;
   isReturnable?: boolean;
   containerType?: string | null;
   isActive?: boolean;
@@ -45,10 +59,15 @@ export interface CreateProductPayload {
 
 export interface UpdateProductPayload {
   name?: string;
+  baseUnit?: ProductBaseUnit;
   volume?: number | null;
   unit?: string | null;
   sku?: string | null;
   defaultSellingPrice?: number;
+  unitsPerPack?: number | null;
+  packLabel?: string | null;
+  containerCapacity?: number | null;
+  allowFractionalQty?: boolean;
   isReturnable?: boolean;
   containerType?: string | null;
   isActive?: boolean;
@@ -63,4 +82,15 @@ export interface CreateProductCostPayload {
 export interface ListProductsParams {
   search?: string;
   isActive?: boolean;
+}
+
+export function baseUnitLabel(unit: ProductBaseUnit): string {
+  switch (unit) {
+    case "LTR":
+      return "L";
+    case "KG":
+      return "kg";
+    default:
+      return "pcs";
+  }
 }

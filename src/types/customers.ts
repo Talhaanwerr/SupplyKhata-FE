@@ -63,6 +63,18 @@ export interface CustomerProductPriceInput {
   pricePerUnit: number;
 }
 
+export interface OpeningContainerInput {
+  productId: string;
+  quantity: number;
+}
+
+export interface CustomerContainerBalanceRow {
+  productId: string;
+  productName: string;
+  balance: number;
+  movementsCount: number;
+}
+
 export interface CreateCustomerPayload {
   name: string;
   email?: string | null;
@@ -80,6 +92,7 @@ export interface CreateCustomerPayload {
   containerDeposit?: number;
   defaultRiderId?: string | null;
   customerProductPrices?: CustomerProductPriceInput[];
+  openingContainers?: OpeningContainerInput[];
 }
 
 export type UpdateCustomerPayload = Partial<CreateCustomerPayload>;

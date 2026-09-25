@@ -16,6 +16,11 @@ import {
   Bike,
   ClipboardList,
   Wallet,
+  Droplets,
+  Receipt,
+  HandCoins,
+  Boxes,
+  Banknote,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
@@ -24,6 +29,8 @@ import { PERMISSIONS } from "@/constants/permissions";
 import { useSidebar } from "./sidebar-context";
 import { TenantSwitcher } from "./TenantSwitcher";
 import { useAuthStore } from "@/store/auth-store";
+import { useFeatureFlag } from "@/hooks/use-feature-flag";
+import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 
 interface NavItem {
   href: string;
@@ -31,6 +38,8 @@ interface NavItem {
   icon: React.ElementType;
   /** Any of these permissions grants visibility. Undefined = any authenticated tenant user. */
   permissions?: string[];
+  /** When set, nav item is hidden unless this feature flag is effectively enabled. */
+  featureFlag?: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -60,10 +69,45 @@ const NAV_ITEMS: NavItem[] = [
     permissions: [PERMISSIONS.DELIVERY_RUNS.READ, PERMISSIONS.DELIVERY_RUNS.MANAGE],
   },
   {
+    href: "/refill-batches",
+    labelKey: "refillBatches",
+    icon: Droplets,
+    permissions: [PERMISSIONS.REFILL.READ, PERMISSIONS.REFILL.MANAGE],
+  },
+  {
+    href: "/expenses",
+    labelKey: "expenses",
+    icon: Receipt,
+    permissions: [
+      PERMISSIONS.EXPENSES.READ,
+      PERMISSIONS.EXPENSES.MANAGE,
+      PERMISSIONS.EXPENSES.CREATE,
+    ],
+  },
+  {
+    href: "/cash-handovers",
+    labelKey: "cashHandovers",
+    icon: HandCoins,
+    permissions: [PERMISSIONS.HANDOVERS.READ, PERMISSIONS.HANDOVERS.MANAGE],
+  },
+  {
+    href: "/container-inventory",
+    labelKey: "containerInventory",
+    icon: Boxes,
+    permissions: [PERMISSIONS.CONTAINERS.READ, PERMISSIONS.CONTAINERS.MANAGE],
+    featureFlag: FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS,
+  },
+  {
     href: "/payments",
     labelKey: "payments",
     icon: Wallet,
     permissions: [PERMISSIONS.PAYMENTS.READ, PERMISSIONS.PAYMENTS.MANAGE],
+  },
+  {
+    href: "/collections",
+    labelKey: "collections",
+    icon: Banknote,
+    permissions: [PERMISSIONS.COLLECTIONS.READ, PERMISSIONS.COLLECTIONS.MANAGE],
   },
   {
     href: "/riders",
@@ -83,7 +127,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: ShieldCheck,
     permissions: [PERMISSIONS.ROLES.READ, PERMISSIONS.ROLES.MANAGE],
   },
-  { href: "/reports", labelKey: "reports", icon: BarChart3 },
+  {
+    href: "/reports",
+    labelKey: "reports",
+    icon: BarChart3,
+    permissions: [PERMISSIONS.REPORTS.READ, PERMISSIONS.REPORTS.MANAGE],
+  },
   {
     href: "/activity-logs",
     labelKey: "activityLogs",
@@ -96,9 +145,19 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
   const t = useTranslations("nav");
+  const { enabled: returnableContainersEnabled } = useFeatureFlag(
+    FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS
+  );
+
+  const flagEnabled = (slug?: string) => {
+    if (!slug) return true;
+    if (slug === FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS) return returnableContainersEnabled;
+    return true;
+  };
 
   const visibleItems = NAV_ITEMS.filter(
-    (item) => !item.permissions || canAccessAny(user, item.permissions)
+    (item) =>
+      (!item.permissions || canAccessAny(user, item.permissions)) && flagEnabled(item.featureFlag)
   );
 
   return (

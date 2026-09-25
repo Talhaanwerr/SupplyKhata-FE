@@ -20,6 +20,7 @@ import { PERMISSIONS } from "@/constants/permissions";
 import { PRODUCTS_QUERY_KEY } from "@/constants/query-keys";
 import { ProductFormModal } from "./ProductFormModal";
 import type { Product } from "@/types/products";
+import { baseUnitLabel } from "@/types/products";
 
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
@@ -94,13 +95,25 @@ export function ProductsTable({ createOpen, onCreateClose }: ProductsTableProps)
       ),
     },
     {
+      key: "baseUnit",
+      header: "Unit",
+      render: (row) => (
+        <span className="text-slate-600">
+          {baseUnitLabel(row.baseUnit ?? "PCS")}
+          {row.hasPackHelper && row.unitsPerPack && row.packLabel
+            ? ` · ${row.unitsPerPack}/${row.packLabel}`
+            : ""}
+        </span>
+      ),
+    },
+    {
       key: "size",
       header: "Size",
       render: (row) => <span className="text-slate-600">{formatSize(row)}</span>,
     },
     {
       key: "defaultSellingPrice",
-      header: "Selling Price",
+      header: "Price / unit",
       render: (row) => formatMoney(row.defaultSellingPrice),
     },
     {

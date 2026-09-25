@@ -20,6 +20,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
+import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { customersApi } from "@/lib/customers-api";
 import { areasApi } from "@/lib/areas-api";
 import { productsApi } from "@/lib/products-api";
@@ -31,9 +32,16 @@ import {
   CUSTOMER_DETAIL_QUERY_KEY,
   PRODUCTS_QUERY_KEY,
   USERS_QUERY_KEY,
+  CONTAINER_INVENTORY_QUERY_KEY,
 } from "@/constants/query-keys";
 import type { CustomerDetail, PaymentCycle, CustomerStatus } from "@/types/customers";
-import { MONEY_RE, refineNonNegativeInteger, refineNonNegativeMoney } from "@/lib/form-number";
+import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
+import {
+  MONEY_RE,
+  INT_RE,
+  refineNonNegativeInteger,
+  refineNonNegativeMoney,
+} from "@/lib/form-number";
 
 const NEW_AREA = "__new__";
 
@@ -154,8 +162,11 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
   const isEdit = !!customer;
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
   const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
   const [priceErrors, setPriceErrors] = useState<Record<string, string>>({});
+  const [openingContainerInputs, setOpeningContainerInputs] = useState<Record<string, string>>({});
+  const [openingContainerErrors, setOpeningContainerErrors] = useState<Record<string, string>>({});
 
   const { data: areasRes } = useQuery({
     queryKey: [AREAS_QUERY_KEY, "customer-form"],
@@ -177,6 +188,7 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
 
   const areas = areasRes?.data ?? [];
   const products = productsRes?.data ?? [];
+  const returnableProducts = containersEnabled ? products.filter((p) => p.isReturnable) : [];
   const riders = usersRes?.data?.items ?? [];
 
   const {
@@ -215,6 +227,7 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
   useEffect(() => {
     if (!open) return;
     setPriceErrors({});
+    setOpeningContainerErrors({});
     if (customer) {
       reset({
         name: customer.name,
@@ -238,6 +251,7 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
         map[row.productId] = String(row.pricePerUnit);
       }
       setPriceInputs(map);
+      setOpeningContainerInputs({});
     } else {
       reset({
         name: "",
@@ -257,12 +271,16 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
         defaultRiderId: "",
       });
       setPriceInputs({});
+      setOpeningContainerInputs({});
     }
   }, [open, customer, reset]);
 
   const save = useApiMutation(
     async (
-      values: FormValues & { customerProductPrices: { productId: string; pricePerUnit: number }[] }
+      values: FormValues & {
+        customerProductPrices: { productId: string; pricePerUnit: number }[];
+        openingContainers?: { productId: string; quantity: number }[];
+      }
     ) => {
       const payload = {
         name: values.name.trim(),
@@ -288,6 +306,9 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
         ...(values.areaChoice === NEW_AREA
           ? { areaName: values.newAreaName!.trim() }
           : { areaId: values.areaChoice }),
+        ...(!isEdit && values.openingContainers?.length
+          ? { openingContainers: values.openingContainers }
+          : {}),
       };
 
       if (isEdit && customer) {
@@ -299,6 +320,7 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: [CUSTOMERS_QUERY_KEY] });
         qc.invalidateQueries({ queryKey: [AREAS_QUERY_KEY] });
+        qc.invalidateQueries({ queryKey: [CONTAINER_INVENTORY_QUERY_KEY] });
         if (customer) {
           qc.invalidateQueries({ queryKey: [CUSTOMER_DETAIL_QUERY_KEY, customer.id] });
         }
@@ -321,9 +343,35 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
       return;
     }
     setPriceErrors({});
+
+    const openingContainers: { productId: string; quantity: number }[] = [];
+    const containerErrs: Record<string, string> = {};
+    if (!isEdit) {
+      for (const product of returnableProducts) {
+        const raw = (openingContainerInputs[product.id] ?? "").trim();
+        if (!raw || raw === "0") continue;
+        if (!INT_RE.test(raw)) {
+          containerErrs[product.id] = "Must be a whole number";
+          continue;
+        }
+        const qty = Number(raw);
+        if (qty < 0) {
+          containerErrs[product.id] = "Must be 0 or more";
+          continue;
+        }
+        if (qty > 0) openingContainers.push({ productId: product.id, quantity: qty });
+      }
+    }
+    if (Object.keys(containerErrs).length > 0) {
+      setOpeningContainerErrors(containerErrs);
+      return;
+    }
+    setOpeningContainerErrors({});
+
     return save.mutateAsync({
       ...values,
       customerProductPrices: priceResult.prices,
+      openingContainers,
     });
   };
 
@@ -441,10 +489,58 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
             <FormField label="Opening receivable" error={errors.openingReceivableBalance?.message}>
               <Input type="number" step="any" {...register("openingReceivableBalance")} />
             </FormField>
-            <FormField label="Container deposit" error={errors.containerDeposit?.message}>
-              <Input type="number" step="1" {...register("containerDeposit")} />
-            </FormField>
+            {containersEnabled && (
+              <FormField label="Container deposit" error={errors.containerDeposit?.message}>
+                <Input type="number" step="1" {...register("containerDeposit")} />
+              </FormField>
+            )}
           </div>
+
+          {!isEdit && returnableProducts.length > 0 && (
+            <div className="rounded-lg border border-slate-200 p-3">
+              <h4 className="mb-1 text-sm font-semibold text-slate-900">
+                Containers already with customer
+              </h4>
+              <p className="mb-3 text-xs text-slate-500">
+                Same idea as opening balance — cans they already hold before the first SupplyKhata
+                delivery. Does not create a sale. Adjust later from the customer Container Balance
+                tab.
+              </p>
+              <div className="space-y-2">
+                {returnableProducts.map((p) => (
+                  <div key={p.id} className="space-y-1">
+                    <div className="grid grid-cols-[1fr_120px] items-center gap-2">
+                      <p className="text-sm font-medium text-slate-800">{p.name}</p>
+                      <Input
+                        inputMode="numeric"
+                        placeholder="0"
+                        aria-invalid={!!openingContainerErrors[p.id]}
+                        value={openingContainerInputs[p.id] ?? ""}
+                        onChange={(e) => {
+                          setOpeningContainerInputs((prev) => ({
+                            ...prev,
+                            [p.id]: e.target.value,
+                          }));
+                          if (openingContainerErrors[p.id]) {
+                            setOpeningContainerErrors((prev) => {
+                              const next = { ...prev };
+                              delete next[p.id];
+                              return next;
+                            });
+                          }
+                        }}
+                      />
+                    </div>
+                    {openingContainerErrors[p.id] && (
+                      <p className="text-xs text-red-600 sm:text-right">
+                        {openingContainerErrors[p.id]}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="rounded-lg border border-slate-200 p-3">
             <h4 className="mb-1 text-sm font-semibold text-slate-900">Product prices</h4>

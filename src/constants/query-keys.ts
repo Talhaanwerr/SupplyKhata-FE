@@ -24,10 +24,20 @@ export const DELIVERY_RUN_SUMMARY_QUERY_KEY = "delivery-run-summary" as const;
 export const DELIVERIES_QUERY_KEY = "deliveries" as const;
 export const PAYMENTS_QUERY_KEY = "payments" as const;
 export const PAYMENTS_DASHBOARD_QUERY_KEY = "payments-dashboard" as const;
+export const REFILL_BATCHES_QUERY_KEY = "refill-batches" as const;
+export const REFILL_AVAILABLE_QUERY_KEY = "refill-available" as const;
+export const EXPENSES_QUERY_KEY = "expenses" as const;
+export const CASH_HANDOVERS_QUERY_KEY = "cash-handovers" as const;
+export const RIDER_CASH_BALANCE_QUERY_KEY = "rider-cash-balance" as const;
+export const CONTAINER_INVENTORY_QUERY_KEY = "container-inventory" as const;
+export const CUSTOMER_CONTAINER_BALANCE_QUERY_KEY = "customer-container-balance" as const;
 export const CUSTOMER_LEDGER_QUERY_KEY = "customer-ledger" as const;
 export const CUSTOMER_BALANCE_QUERY_KEY = "customer-balance" as const;
 export const CUSTOMER_STATEMENT_QUERY_KEY = "customer-statement" as const;
 export const FEATURE_FLAGS_QUERY_KEY = "feature-flags" as const;
+export const DASHBOARD_QUERY_KEY = "dashboard" as const;
+export const REPORTS_QUERY_KEY = "reports" as const;
+export const COLLECTIONS_QUERY_KEY = "collections" as const;
 
 export const AUDIT_LOGS_QUERY_KEY = "audit-logs" as const;
 

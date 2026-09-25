@@ -29,15 +29,17 @@ import { Select } from "@/components/ui/select";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
+import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { customersApi } from "@/lib/customers-api";
 import { deliveriesApi } from "@/lib/deliveries-api";
 import { deliveryRunsApi } from "@/lib/delivery-runs-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
-import { INT_RE, MONEY_RE } from "@/lib/form-number";
+import { INT_RE, MONEY_RE, QTY_RE } from "@/lib/form-number";
 import { PERMISSIONS } from "@/constants/permissions";
 import {
   CUSTOMERS_QUERY_KEY,
   CUSTOMER_BALANCE_QUERY_KEY,
+  CUSTOMER_CONTAINER_BALANCE_QUERY_KEY,
   CUSTOMER_DETAIL_QUERY_KEY,
   DELIVERIES_QUERY_KEY,
   DELIVERY_RUN_DETAIL_QUERY_KEY,
@@ -48,11 +50,20 @@ import {
 } from "@/constants/query-keys";
 import { productsApi } from "@/lib/products-api";
 import type { DeliveryDetail, DeliveryRunStockPayload, PaymentMethod } from "@/types/delivery";
+import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
+import type { Product } from "@/types/products";
+import { baseUnitLabel } from "@/types/products";
 
 const itemSchema = z.object({
   productId: z.string().min(1),
-  quantityDelivered: z.string().regex(INT_RE, "Qty must be a whole number"),
+  quantityDelivered: z.string().regex(QTY_RE, "Qty must be a non-negative number (max 3 decimals)"),
   emptiesReceived: z.string().regex(INT_RE, "Empties must be a whole number"),
+});
+
+const stockRowSchema = z.object({
+  productId: z.string().min(1),
+  filledCount: z.string().regex(QTY_RE, "Units must be a non-negative number (max 3 decimals)"),
+  emptyCount: z.string().regex(INT_RE, "Empty count must be a whole number"),
 });
 
 const deliverySchema = z
@@ -72,7 +83,7 @@ const deliverySchema = z
   .superRefine((values, ctx) => {
     const hasActivity = values.items.some(
       (item) =>
-        (INT_RE.test(item.quantityDelivered) && Number(item.quantityDelivered) > 0) ||
+        (QTY_RE.test(item.quantityDelivered) && Number(item.quantityDelivered) > 0) ||
         (INT_RE.test(item.emptiesReceived) && Number(item.emptiesReceived) > 0)
     );
     if (!hasActivity) {
@@ -118,12 +129,7 @@ const closeSchema = z.object({
     .string()
     .min(1, "Closing cash is required")
     .regex(MONEY_RE, "Closing cash can have at most 2 decimal places"),
-  closingStock: z.array(
-    itemSchema.pick({ productId: true }).extend({
-      filledCount: z.string().regex(INT_RE, "Filled cans must be a whole number"),
-      emptyCount: z.string().regex(INT_RE, "Empty cans must be a whole number"),
-    })
-  ),
+  closingStock: z.array(stockRowSchema),
 });
 
 const editOpeningSchema = z.object({
@@ -132,12 +138,7 @@ const editOpeningSchema = z.object({
     .min(1, "Opening cash is required")
     .regex(MONEY_RE, "Opening cash can have at most 2 decimal places"),
   notes: z.string().max(500).optional(),
-  openingStock: z.array(
-    itemSchema.pick({ productId: true }).extend({
-      filledCount: z.string().regex(INT_RE, "Filled cans must be a whole number"),
-      emptyCount: z.string().regex(INT_RE, "Empty cans must be a whole number"),
-    })
-  ),
+  openingStock: z.array(stockRowSchema),
 });
 
 type DeliveryFormValues = z.infer<typeof deliverySchema>;
@@ -153,12 +154,19 @@ function money(value: number | null | undefined) {
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+const EMPTY_CUSTOMERS: { id: string; name: string }[] = [];
+const EMPTY_PRODUCTS: Product[] = [];
+
 export function DeliveryRunDetailView() {
   const params = useParams<{ id: string }>();
   const runId = params.id;
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [packHelper, setPackHelper] = useState<Record<string, { packs: string; loose: string }>>(
+    {}
+  );
   const [closeOpen, setCloseOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [cancelDelivery, setCancelDelivery] = useState<DeliveryDetail | null>(null);
@@ -185,9 +193,11 @@ export function DeliveryRunDetailView() {
 
   const run = runQuery.data?.data;
   const summary = summaryQuery.data?.data;
-  const customers = customersQuery.data?.data?.items ?? [];
-  const products = productsQuery.data?.data ?? [];
+  const customers = customersQuery.data?.data?.items ?? EMPTY_CUSTOMERS;
+  const products = productsQuery.data?.data ?? EMPTY_PRODUCTS;
   const isClosed = run?.status === "CLOSED";
+
+  const tracksContainers = (product: Product) => containersEnabled && product.isReturnable;
 
   const deliveryForm = useForm<DeliveryFormValues>({
     resolver: zodResolver(deliverySchema),
@@ -210,6 +220,8 @@ export function DeliveryRunDetailView() {
     resolver: zodResolver(editOpeningSchema),
     defaultValues: { openingCash: "0", notes: "", openingStock: [] },
   });
+  const { reset: resetDeliveryForm } = deliveryForm;
+  const { reset: resetCloseForm } = closeForm;
 
   const selectedCustomerId = deliveryForm.watch("customerId");
   const watchedItems = deliveryForm.watch("items");
@@ -219,6 +231,21 @@ export function DeliveryRunDetailView() {
     queryFn: () => customersApi.get(selectedCustomerId),
     enabled: !!selectedCustomerId,
   });
+  const customerBalanceQuery = useQuery({
+    queryKey: [CUSTOMER_BALANCE_QUERY_KEY, selectedCustomerId],
+    queryFn: () => customersApi.balance(selectedCustomerId),
+    enabled: !!selectedCustomerId,
+  });
+  const customerContainersQuery = useQuery({
+    queryKey: [CUSTOMER_CONTAINER_BALANCE_QUERY_KEY, selectedCustomerId],
+    queryFn: () => customersApi.containerBalance(selectedCustomerId),
+    enabled: !!selectedCustomerId && containersEnabled,
+  });
+  const selectedCustomer = customerDetailQuery.data?.data;
+  const selectedBalance = customerBalanceQuery.data?.data?.balance ?? null;
+  const containersWithCustomer = (customerContainersQuery.data?.data ?? []).filter(
+    (row) => row.balance > 0
+  );
 
   const remainingFilledByProduct = useMemo(() => {
     const map = new Map<string, number>();
@@ -248,8 +275,11 @@ export function DeliveryRunDetailView() {
     return map;
   }, [run]);
 
+  const productIdsKey = products.map((p) => p.id).join(",");
+
   useEffect(() => {
-    deliveryForm.reset((current) => ({
+    if (!products.length) return;
+    resetDeliveryForm((current) => ({
       ...current,
       items: products.map((product) => ({
         productId: product.id,
@@ -257,7 +287,7 @@ export function DeliveryRunDetailView() {
         emptiesReceived: "0",
       })),
     }));
-    closeForm.reset((current) => ({
+    resetCloseForm((current) => ({
       ...current,
       closingStock: products.map((product) => ({
         productId: product.id,
@@ -265,7 +295,9 @@ export function DeliveryRunDetailView() {
         emptyCount: "0",
       })),
     }));
-  }, [products, deliveryForm, closeForm]);
+    // Only re-seed when the product set changes — not on form identity or query refetches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- products read via productIdsKey
+  }, [productIdsKey, resetDeliveryForm, resetCloseForm]);
 
   function openEditOpening() {
     if (!run) return;
@@ -298,7 +330,7 @@ export function DeliveryRunDetailView() {
   const totalSale = useMemo(
     () =>
       watchedItems.reduce((sum, item) => {
-        const qty = INT_RE.test(item.quantityDelivered) ? Number(item.quantityDelivered) : 0;
+        const qty = QTY_RE.test(item.quantityDelivered) ? Number(item.quantityDelivered) : 0;
         return sum + qty * (priceByProduct.get(item.productId) ?? 0);
       }, 0),
     [watchedItems, priceByProduct]
@@ -330,11 +362,15 @@ export function DeliveryRunDetailView() {
         promisedAmount,
         items: values.items
           .filter((item) => Number(item.quantityDelivered) > 0 || Number(item.emptiesReceived) > 0)
-          .map((item) => ({
-            productId: item.productId,
-            quantityDelivered: Number(item.quantityDelivered),
-            emptiesReceived: Number(item.emptiesReceived),
-          })),
+          .map((item) => {
+            const product = products.find((p) => p.id === item.productId);
+            const allowEmpties = product ? tracksContainers(product) : false;
+            return {
+              productId: item.productId,
+              quantityDelivered: Number(item.quantityDelivered),
+              emptiesReceived: allowEmpties ? Number(item.emptiesReceived) : 0,
+            };
+          }),
       });
     },
     {
@@ -368,11 +404,15 @@ export function DeliveryRunDetailView() {
     (values: CloseFormValues) =>
       deliveryRunsApi.close(runId, {
         closingCash: Number(values.closingCash),
-        closingStock: values.closingStock.map((stock): DeliveryRunStockPayload => ({
-          productId: stock.productId,
-          filledCount: Number(stock.filledCount),
-          emptyCount: Number(stock.emptyCount),
-        })),
+        closingStock: values.closingStock.map((stock): DeliveryRunStockPayload => {
+          const product = products.find((p) => p.id === stock.productId);
+          const allowEmpty = product ? tracksContainers(product) : false;
+          return {
+            productId: stock.productId,
+            filledCount: Number(stock.filledCount),
+            emptyCount: allowEmpty ? Number(stock.emptyCount) : 0,
+          };
+        }),
       }),
     {
       onSuccess: () => {
@@ -389,11 +429,15 @@ export function DeliveryRunDetailView() {
       deliveryRunsApi.update(runId, {
         openingCash: Number(values.openingCash),
         notes: values.notes?.trim() || null,
-        openingStock: values.openingStock.map((stock): DeliveryRunStockPayload => ({
-          productId: stock.productId,
-          filledCount: Number(stock.filledCount),
-          emptyCount: Number(stock.emptyCount),
-        })),
+        openingStock: values.openingStock.map((stock): DeliveryRunStockPayload => {
+          const product = products.find((p) => p.id === stock.productId);
+          const allowEmpty = product ? tracksContainers(product) : false;
+          return {
+            productId: stock.productId,
+            filledCount: Number(stock.filledCount),
+            emptyCount: allowEmpty ? Number(stock.emptyCount) : 0,
+          };
+        }),
       }),
     {
       onSuccess: () => {
@@ -406,14 +450,21 @@ export function DeliveryRunDetailView() {
   );
 
   function submitDelivery(values: DeliveryFormValues) {
-    for (const item of values.items) {
+    for (const [index, item] of values.items.entries()) {
+      const product = products.find((row) => row.id === item.productId);
       const qty = Number(item.quantityDelivered);
-      if (!Number.isFinite(qty) || qty <= 0) continue;
+      if (!Number.isFinite(qty) || qty < 0) continue;
+      if (qty > 0 && product && !product.allowFractionalQty && !Number.isInteger(qty)) {
+        deliveryForm.setError(`items.${index}.quantityDelivered`, {
+          message: `"${product.name}" requires a whole number`,
+        });
+        return Promise.resolve();
+      }
+      if (qty <= 0) continue;
       const available = remainingFilledByProduct.get(item.productId) ?? 0;
       if (qty > available) {
-        const product = products.find((row) => row.id === item.productId);
         deliveryForm.setError("root", {
-          message: `Only ${available} filled left on this run for "${product?.name ?? "product"}"`,
+          message: `Only ${available} units left on this run for "${product?.name ?? "product"}"`,
         });
         return Promise.resolve();
       }
@@ -461,7 +512,7 @@ export function DeliveryRunDetailView() {
     return watchedClosingStock.map((stock) => {
       const product = products.find((p) => p.id === stock.productId);
       const row = expected.get(stock.productId);
-      const filled = INT_RE.test(stock.filledCount) ? Number(stock.filledCount) : 0;
+      const filled = QTY_RE.test(stock.filledCount) ? Number(stock.filledCount) : 0;
       const empty = INT_RE.test(stock.emptyCount) ? Number(stock.emptyCount) : 0;
       return {
         productId: stock.productId,
@@ -473,119 +524,130 @@ export function DeliveryRunDetailView() {
     });
   }, [products, summary?.productDiscrepancies, watchedClosingStock]);
 
-  const deliveryColumns: Column<DeliveryDetail>[] = [
-    {
-      key: "customer",
-      header: "Customer",
-      render: (row) => <span className="font-medium text-slate-900">{row.customer.name}</span>,
-    },
-    {
-      key: "products",
-      header: "Products",
-      render: (row) => {
-        const lines = (row.items ?? []).filter(
-          (item) => item.quantityDelivered > 0 || item.emptiesReceived > 0
-        );
-        if (lines.length === 0) {
-          return <span className="text-slate-400">{row.productsSummary || "-"}</span>;
-        }
-        return (
-          <div className="space-y-1">
-            {lines.map((item) => (
-              <p key={item.id} className="text-sm text-slate-800">
-                {item.product.name}
-              </p>
-            ))}
+  const deliveryColumns: Column<DeliveryDetail>[] = useMemo(() => {
+    const cols: Column<DeliveryDetail>[] = [
+      {
+        key: "customer",
+        header: "Customer",
+        render: (row) => <span className="font-medium text-slate-900">{row.customer.name}</span>,
+      },
+      {
+        key: "products",
+        header: "Products",
+        render: (row) => {
+          const lines = (row.items ?? []).filter(
+            (item) => item.quantityDelivered > 0 || item.emptiesReceived > 0
+          );
+          if (lines.length === 0) {
+            return <span className="text-slate-400">{row.productsSummary || "-"}</span>;
+          }
+          return (
+            <div className="space-y-1">
+              {lines.map((item) => (
+                <p key={item.id} className="text-sm text-slate-800">
+                  {item.product.name}
+                </p>
+              ))}
+            </div>
+          );
+        },
+      },
+      {
+        key: "delivered",
+        header: "Delivered",
+        render: (row) => {
+          const lines = (row.items ?? []).filter(
+            (item) => item.quantityDelivered > 0 || item.emptiesReceived > 0
+          );
+          if (lines.length === 0) return <span>-</span>;
+          return (
+            <div className="space-y-1">
+              {lines.map((item) => (
+                <p key={item.id} className="text-sm text-slate-800 tabular-nums">
+                  {item.quantityDelivered}
+                </p>
+              ))}
+            </div>
+          );
+        },
+      },
+    ];
+
+    if (containersEnabled) {
+      cols.push({
+        key: "empties",
+        header: "Empties",
+        render: (row) => {
+          const lines = (row.items ?? []).filter(
+            (item) => item.quantityDelivered > 0 || item.emptiesReceived > 0
+          );
+          if (lines.length === 0) return <span>-</span>;
+          return (
+            <div className="space-y-1">
+              {lines.map((item) => (
+                <p key={item.id} className="text-sm text-slate-800 tabular-nums">
+                  {item.emptiesReceived}
+                </p>
+              ))}
+            </div>
+          );
+        },
+      });
+    }
+
+    cols.push(
+      {
+        key: "sale",
+        header: "Sale",
+        render: (row) => {
+          const sale =
+            row.totalSale ??
+            (row.items ?? []).reduce((sum, item) => sum + (item.lineTotal ?? 0), 0);
+          return <span className="tabular-nums">{money(sale)}</span>;
+        },
+      },
+      {
+        key: "cash",
+        header: "Cash",
+        render: (row) => <span className="tabular-nums">{money(row.cashReceived)}</span>,
+      },
+      {
+        key: "status",
+        header: "Status",
+        render: (row) => <StatusBadge status={row.status} />,
+      },
+      {
+        key: "actions",
+        header: "",
+        render: (row) => (
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setViewDelivery(row)}
+              aria-label="View delivery"
+            >
+              <Eye className="h-4 w-4 text-slate-600" />
+            </Button>
+            {isClosed || row.status === "CANCELLED" ? null : (
+              <PermissionGuard permission={PERMISSIONS.DELIVERIES.UPDATE}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCancelDelivery(row)}
+                  aria-label="Cancel delivery"
+                >
+                  <XCircle className="h-4 w-4 text-red-600" />
+                </Button>
+              </PermissionGuard>
+            )}
           </div>
-        );
-      },
-    },
-    {
-      key: "delivered",
-      header: "Delivered",
-      render: (row) => {
-        const lines = (row.items ?? []).filter(
-          (item) => item.quantityDelivered > 0 || item.emptiesReceived > 0
-        );
-        if (lines.length === 0) return <span>-</span>;
-        return (
-          <div className="space-y-1">
-            {lines.map((item) => (
-              <p key={item.id} className="text-sm text-slate-800 tabular-nums">
-                {item.quantityDelivered}
-              </p>
-            ))}
-          </div>
-        );
-      },
-    },
-    {
-      key: "empties",
-      header: "Empties",
-      render: (row) => {
-        const lines = (row.items ?? []).filter(
-          (item) => item.quantityDelivered > 0 || item.emptiesReceived > 0
-        );
-        if (lines.length === 0) return <span>-</span>;
-        return (
-          <div className="space-y-1">
-            {lines.map((item) => (
-              <p key={item.id} className="text-sm text-slate-800 tabular-nums">
-                {item.emptiesReceived}
-              </p>
-            ))}
-          </div>
-        );
-      },
-    },
-    {
-      key: "sale",
-      header: "Sale",
-      render: (row) => {
-        const sale =
-          row.totalSale ?? (row.items ?? []).reduce((sum, item) => sum + (item.lineTotal ?? 0), 0);
-        return <span className="tabular-nums">{money(sale)}</span>;
-      },
-    },
-    {
-      key: "cash",
-      header: "Cash",
-      render: (row) => <span className="tabular-nums">{money(row.cashReceived)}</span>,
-    },
-    {
-      key: "status",
-      header: "Status",
-      render: (row) => <StatusBadge status={row.status} />,
-    },
-    {
-      key: "actions",
-      header: "",
-      render: (row) => (
-        <div className="flex items-center justify-end gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setViewDelivery(row)}
-            aria-label="View delivery"
-          >
-            <Eye className="h-4 w-4 text-slate-600" />
-          </Button>
-          {isClosed || row.status === "CANCELLED" ? null : (
-            <PermissionGuard permission={PERMISSIONS.DELIVERIES.UPDATE}>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCancelDelivery(row)}
-                aria-label="Cancel delivery"
-              >
-                <XCircle className="h-4 w-4 text-red-600" />
-              </Button>
-            </PermissionGuard>
-          )}
-        </div>
-      ),
-    },
-  ];
+        ),
+      }
+    );
+
+    return cols;
+  }, [containersEnabled, isClosed]);
 
   if (runQuery.isLoading) return <p className="text-sm text-slate-500">Loading run...</p>;
   if (!run)
@@ -618,7 +680,12 @@ export function DeliveryRunDetailView() {
                   </Button>
                 </PermissionGuard>
                 <PermissionGuard permission={PERMISSIONS.DELIVERIES.CREATE}>
-                  <Button onClick={() => setDeliveryOpen(true)}>
+                  <Button
+                    onClick={() => {
+                      setPackHelper({});
+                      setDeliveryOpen(true);
+                    }}
+                  >
                     <Plus className="h-4 w-4" />
                     Add Delivery
                   </Button>
@@ -664,8 +731,8 @@ export function DeliveryRunDetailView() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <StockCard title="Opening Stock" rows={openingStock} />
-        <StockCard title="Closing Stock" rows={closingStock} />
+        <StockCard title="Opening Stock" rows={openingStock} showEmpties={containersEnabled} />
+        <StockCard title="Closing Stock" rows={closingStock} showEmpties={containersEnabled} />
       </div>
 
       <Card>
@@ -690,12 +757,16 @@ export function DeliveryRunDetailView() {
             <div key={row.productId} className="rounded-lg border border-slate-200 p-3 text-sm">
               <p className="font-medium text-slate-900">{row.productName}</p>
               <p className="text-slate-600">
-                Expected closing: {row.expectedClosingFilled} filled, {row.expectedClosingEmpty}{" "}
-                empty. Actual: {row.closingFilled} filled, {row.closingEmpty} empty.
+                Expected closing: {row.expectedClosingFilled} filled
+                {containersEnabled
+                  ? `, ${row.expectedClosingEmpty} empty. Actual: ${row.closingFilled} filled, ${row.closingEmpty} empty.`
+                  : `. Actual: ${row.closingFilled} filled.`}
               </p>
-              <p className={row.missingContainers === 0 ? "text-green-700" : "text-red-700"}>
-                Missing containers: {row.missingContainers}
-              </p>
+              {containersEnabled && (
+                <p className={row.missingContainers === 0 ? "text-green-700" : "text-red-700"}>
+                  Missing containers: {row.missingContainers}
+                </p>
+              )}
             </div>
           ))}
           {summary && (
@@ -766,6 +837,167 @@ export function DeliveryRunDetailView() {
                 <Input inputMode="decimal" {...deliveryForm.register("cashReceived")} />
               </FormField>
             </div>
+
+            {selectedCustomerId && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="mb-3 text-sm font-medium text-slate-900">
+                  Customer snapshot
+                  {selectedCustomer?.name ? ` — ${selectedCustomer.name}` : ""}
+                </p>
+                {customerBalanceQuery.isLoading ||
+                (containersEnabled && customerContainersQuery.isLoading) ||
+                customerDetailQuery.isLoading ? (
+                  <p className="text-sm text-slate-500">
+                    {containersEnabled ? "Loading dues and containers…" : "Loading dues…"}
+                  </p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <p className="text-xs text-slate-500">Outstanding balance</p>
+                      <p
+                        className={`text-sm font-semibold ${
+                          (selectedBalance ?? 0) > 0 ? "text-amber-700" : "text-slate-900"
+                        }`}
+                      >
+                        {selectedBalance == null ? "—" : money(selectedBalance)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <p className="text-xs text-slate-500">Promised due</p>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {selectedCustomer?.promisedDueDate
+                          ? `${new Date(selectedCustomer.promisedDueDate).toLocaleDateString()}${
+                              selectedCustomer.promisedDueAmount != null
+                                ? ` · ${money(selectedCustomer.promisedDueAmount)}`
+                                : ""
+                            }`
+                          : "None"}
+                      </p>
+                    </div>
+                    {containersEnabled && (
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 sm:col-span-2">
+                        <p className="text-xs text-slate-500">Containers with customer</p>
+                        {containersWithCustomer.length === 0 ? (
+                          <p className="mt-1 text-sm text-slate-600">None on record</p>
+                        ) : (
+                          <ul className="mt-1 space-y-0.5 text-sm text-slate-800">
+                            {containersWithCustomer.map((row) => (
+                              <li key={row.productId}>
+                                <span className="font-medium">{row.productName}</span>
+                                {": "}
+                                {row.balance} — collect empties if returning
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {products.map((product, index) => {
+                const available = remainingFilledByProduct.get(product.id) ?? 0;
+                const unit = baseUnitLabel(product.baseUnit ?? "PCS");
+                const helper = packHelper[product.id] ?? { packs: "", loose: "" };
+                const applyPack = (packs: string, loose: string) => {
+                  setPackHelper((prev) => ({ ...prev, [product.id]: { packs, loose } }));
+                  const p = Number(packs) || 0;
+                  const l = Number(loose) || 0;
+                  const per = product.unitsPerPack ?? 0;
+                  deliveryForm.setValue(`items.${index}.quantityDelivered`, String(p * per + l), {
+                    shouldValidate: true,
+                  });
+                };
+                return (
+                  <div key={product.id} className="rounded-xl border border-slate-200 p-3">
+                    <input type="hidden" {...deliveryForm.register(`items.${index}.productId`)} />
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-slate-900">{product.name}</p>
+                        <p
+                          className={`text-xs ${available > 0 ? "text-slate-500" : "text-red-600"}`}
+                        >
+                          Available on run: {available} {unit}
+                        </p>
+                        {product.baseUnit === "LTR" && product.containerCapacity != null && (
+                          <p className="text-xs text-slate-500">
+                            Enter litres delivered. Can size {product.containerCapacity}L is
+                            packaging, not qty.
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-sm text-slate-500">
+                        Price: {money(priceByProduct.get(product.id))}/{unit}
+                      </span>
+                    </div>
+                    {product.hasPackHelper && product.unitsPerPack != null && (
+                      <div className="mb-3 grid gap-3 sm:grid-cols-3">
+                        <FormField label={`Packs (${product.packLabel ?? "pack"})`}>
+                          <Input
+                            className="h-11 text-base"
+                            inputMode="numeric"
+                            value={helper.packs}
+                            onChange={(e) => applyPack(e.target.value, helper.loose)}
+                          />
+                        </FormField>
+                        <FormField label="Loose pieces">
+                          <Input
+                            className="h-11 text-base"
+                            inputMode="numeric"
+                            value={helper.loose}
+                            onChange={(e) => applyPack(helper.packs, e.target.value)}
+                          />
+                        </FormField>
+                        <FormField label="= pieces">
+                          <Input
+                            className="h-11 text-base"
+                            readOnly
+                            value={String(
+                              (Number(helper.packs) || 0) * product.unitsPerPack +
+                                (Number(helper.loose) || 0)
+                            )}
+                          />
+                        </FormField>
+                      </div>
+                    )}
+                    <div
+                      className={`grid gap-3 ${tracksContainers(product) ? "sm:grid-cols-2" : ""}`}
+                    >
+                      <FormField
+                        label={`Qty delivered (${unit})`}
+                        error={
+                          deliveryForm.formState.errors.items?.[index]?.quantityDelivered?.message
+                        }
+                      >
+                        <Input
+                          className="h-11 text-base"
+                          inputMode={product.allowFractionalQty ? "decimal" : "numeric"}
+                          {...deliveryForm.register(`items.${index}.quantityDelivered`)}
+                        />
+                      </FormField>
+                      {tracksContainers(product) && (
+                        <FormField
+                          label="Empties received"
+                          error={
+                            deliveryForm.formState.errors.items?.[index]?.emptiesReceived?.message
+                          }
+                        >
+                          <Input
+                            className="h-11 text-base"
+                            inputMode="numeric"
+                            {...deliveryForm.register(`items.${index}.emptiesReceived`)}
+                          />
+                        </FormField>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
             <div className="space-y-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4">
               <div>
                 <p className="text-sm font-medium text-slate-900">Payment promise (optional)</p>
@@ -797,55 +1029,7 @@ export function DeliveryRunDetailView() {
                 </FormField>
               </div>
             </div>
-            <div className="space-y-3">
-              {products.map((product, index) => {
-                const available = remainingFilledByProduct.get(product.id) ?? 0;
-                return (
-                  <div key={product.id} className="rounded-xl border border-slate-200 p-3">
-                    <input type="hidden" {...deliveryForm.register(`items.${index}.productId`)} />
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-medium text-slate-900">{product.name}</p>
-                        <p
-                          className={`text-xs ${available > 0 ? "text-slate-500" : "text-red-600"}`}
-                        >
-                          Available filled on run: {available}
-                        </p>
-                      </div>
-                      <span className="text-sm text-slate-500">
-                        Price: {money(priceByProduct.get(product.id))}
-                      </span>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <FormField
-                        label="Qty delivered"
-                        error={
-                          deliveryForm.formState.errors.items?.[index]?.quantityDelivered?.message
-                        }
-                      >
-                        <Input
-                          className="h-11 text-base"
-                          inputMode="numeric"
-                          {...deliveryForm.register(`items.${index}.quantityDelivered`)}
-                        />
-                      </FormField>
-                      <FormField
-                        label="Empties received"
-                        error={
-                          deliveryForm.formState.errors.items?.[index]?.emptiesReceived?.message
-                        }
-                      >
-                        <Input
-                          className="h-11 text-base"
-                          inputMode="numeric"
-                          {...deliveryForm.register(`items.${index}.emptiesReceived`)}
-                        />
-                      </FormField>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+
             <FormField label="Notes" error={deliveryForm.formState.errors.notes?.message}>
               <Input placeholder="Optional" {...deliveryForm.register("notes")} />
             </FormField>
@@ -903,25 +1087,33 @@ export function DeliveryRunDetailView() {
                     <p className="font-medium text-slate-900">{product.name}</p>
                     <p className="text-xs text-slate-500">Already delivered: {delivered}</p>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div
+                    className={`grid gap-3 ${tracksContainers(product) ? "sm:grid-cols-2" : ""}`}
+                  >
                     <FormField
-                      label="Opening filled"
+                      label={
+                        tracksContainers(product) && product.baseUnit === "PCS"
+                          ? "Opening filled"
+                          : `Opening units (${baseUnitLabel(product.baseUnit ?? "PCS")})`
+                      }
                       error={editForm.formState.errors.openingStock?.[index]?.filledCount?.message}
                     >
                       <Input
-                        inputMode="numeric"
+                        inputMode={product.allowFractionalQty ? "decimal" : "numeric"}
                         {...editForm.register(`openingStock.${index}.filledCount`)}
                       />
                     </FormField>
-                    <FormField
-                      label="Opening empty"
-                      error={editForm.formState.errors.openingStock?.[index]?.emptyCount?.message}
-                    >
-                      <Input
-                        inputMode="numeric"
-                        {...editForm.register(`openingStock.${index}.emptyCount`)}
-                      />
-                    </FormField>
+                    {tracksContainers(product) && (
+                      <FormField
+                        label="Opening empty"
+                        error={editForm.formState.errors.openingStock?.[index]?.emptyCount?.message}
+                      >
+                        <Input
+                          inputMode="numeric"
+                          {...editForm.register(`openingStock.${index}.emptyCount`)}
+                        />
+                      </FormField>
+                    )}
                   </div>
                 </div>
               );
@@ -994,29 +1186,35 @@ export function DeliveryRunDetailView() {
               <div key={product.id} className="rounded-xl border border-slate-200 p-3">
                 <input type="hidden" {...closeForm.register(`closingStock.${index}.productId`)} />
                 <p className="mb-3 font-medium text-slate-900">{product.name}</p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className={`grid gap-3 ${tracksContainers(product) ? "sm:grid-cols-2" : ""}`}>
                   <FormField
-                    label="Closing filled"
+                    label={
+                      tracksContainers(product) && product.baseUnit === "PCS"
+                        ? "Closing filled"
+                        : `Closing units (${baseUnitLabel(product.baseUnit ?? "PCS")})`
+                    }
                     error={closeForm.formState.errors.closingStock?.[index]?.filledCount?.message}
                   >
                     <Input
-                      inputMode="numeric"
+                      inputMode={product.allowFractionalQty ? "decimal" : "numeric"}
                       {...closeForm.register(`closingStock.${index}.filledCount`)}
                     />
                   </FormField>
-                  <FormField
-                    label="Closing empty"
-                    error={closeForm.formState.errors.closingStock?.[index]?.emptyCount?.message}
-                  >
-                    <Input
-                      inputMode="numeric"
-                      {...closeForm.register(`closingStock.${index}.emptyCount`)}
-                    />
-                  </FormField>
+                  {tracksContainers(product) && (
+                    <FormField
+                      label="Closing empty"
+                      error={closeForm.formState.errors.closingStock?.[index]?.emptyCount?.message}
+                    >
+                      <Input
+                        inputMode="numeric"
+                        {...closeForm.register(`closingStock.${index}.emptyCount`)}
+                      />
+                    </FormField>
+                  )}
                 </div>
               </div>
             ))}
-            {closePreview.length > 0 && (
+            {containersEnabled && closePreview.length > 0 && (
               <div className="rounded-lg bg-slate-50 p-3">
                 <p className="mb-2 text-sm font-medium text-slate-900">Discrepancy preview</p>
                 <div className="space-y-1 text-sm">
@@ -1098,7 +1296,7 @@ export function DeliveryRunDetailView() {
                       <tr>
                         <th className="px-3 py-2 font-medium">Product</th>
                         <th className="px-3 py-2 font-medium">Delivered</th>
-                        <th className="px-3 py-2 font-medium">Empties</th>
+                        {containersEnabled && <th className="px-3 py-2 font-medium">Empties</th>}
                         <th className="px-3 py-2 font-medium">Price</th>
                         <th className="px-3 py-2 font-medium">Line total</th>
                       </tr>
@@ -1112,7 +1310,9 @@ export function DeliveryRunDetailView() {
                               {item.product.name}
                             </td>
                             <td className="px-3 py-2 tabular-nums">{item.quantityDelivered}</td>
-                            <td className="px-3 py-2 tabular-nums">{item.emptiesReceived}</td>
+                            {containersEnabled && (
+                              <td className="px-3 py-2 tabular-nums">{item.emptiesReceived}</td>
+                            )}
                             <td className="px-3 py-2 tabular-nums">
                               {money(item.sellingPriceSnapshot)}
                             </td>
@@ -1123,7 +1323,10 @@ export function DeliveryRunDetailView() {
                         (item) => item.quantityDelivered > 0 || item.emptiesReceived > 0
                       ).length === 0 && (
                         <tr>
-                          <td colSpan={5} className="px-3 py-4 text-center text-slate-500">
+                          <td
+                            colSpan={containersEnabled ? 5 : 4}
+                            className="px-3 py-4 text-center text-slate-500"
+                          >
                             No product lines on this delivery.
                           </td>
                         </tr>
@@ -1151,7 +1354,9 @@ export function DeliveryRunDetailView() {
         title="Cancel Delivery"
         description={
           cancelDelivery
-            ? `Cancel delivery for ${cancelDelivery.customer.name}? Ledger and container movements will be reversed.`
+            ? containersEnabled
+              ? `Cancel delivery for ${cancelDelivery.customer.name}? Ledger and container movements will be reversed.`
+              : `Cancel delivery for ${cancelDelivery.customer.name}? Ledger entries will be reversed.`
             : ""
         }
         confirmLabel="Cancel Delivery"
@@ -1174,6 +1379,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 function StockCard({
   title,
   rows,
+  showEmpties = true,
 }: {
   title: string;
   rows: Array<{
@@ -1182,6 +1388,7 @@ function StockCard({
     filledCount: number;
     emptyCount: number;
   }>;
+  showEmpties?: boolean;
 }) {
   return (
     <Card>
@@ -1199,7 +1406,9 @@ function StockCard({
             >
               <span className="font-medium text-slate-900">{row.product.name}</span>
               <span className="text-slate-600">
-                {row.filledCount} filled / {row.emptyCount} empty
+                {showEmpties
+                  ? `${row.filledCount} filled / ${row.emptyCount} empty`
+                  : `${row.filledCount} units`}
               </span>
             </div>
           ))

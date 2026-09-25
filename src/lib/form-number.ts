@@ -6,6 +6,9 @@ export const MONEY_RE = /^\d+(\.\d{1,2})?$/;
 /** Non-negative whole number (no decimals). */
 export const INT_RE = /^\d+$/;
 
+/** Non-negative qty with optional max 3 decimal places (base units). */
+export const QTY_RE = /^\d+(\.\d{1,3})?$/;
+
 export function refineNonNegativeMoney(
   val: string | undefined,
   label: string,
@@ -89,6 +92,53 @@ export function refineNonNegativeInteger(
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: `${label} must be a whole number (no decimals)`,
+      path: [path],
+    });
+  }
+}
+
+/** Validate qty string: whole if !allowFractional, else max 3 decimals. */
+export function refineQuantity(
+  val: string | undefined,
+  label: string,
+  ctx: z.RefinementCtx,
+  path: string,
+  opts: { allowFractional: boolean; required?: boolean }
+) {
+  if (val == null || val.trim() === "") {
+    if (opts.required) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${label} is required`,
+        path: [path],
+      });
+    }
+    return;
+  }
+  const trimmed = val.trim();
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${label} must be a non-negative number`,
+      path: [path],
+    });
+    return;
+  }
+  if (!opts.allowFractional) {
+    if (!INT_RE.test(trimmed) || !Number.isInteger(n)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${label} must be a whole number`,
+        path: [path],
+      });
+    }
+    return;
+  }
+  if (!QTY_RE.test(trimmed)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${label} can have at most 3 decimal places`,
       path: [path],
     });
   }

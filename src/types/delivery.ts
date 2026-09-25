@@ -129,6 +129,12 @@ export interface DeliveryRunSummary {
   productDiscrepancies: ProductDiscrepancy[];
 }
 
+export interface DeliveryRunRefillLoadPayload {
+  refillBatchId: string;
+  productId: string;
+  quantityLoaded: number;
+}
+
 export interface CreateDeliveryRunPayload {
   riderId: string;
   vehicleId: string;
@@ -136,6 +142,7 @@ export interface CreateDeliveryRunPayload {
   openingCash: number;
   openingStock: DeliveryRunStockPayload[];
   notes?: string | null;
+  refillLoads?: DeliveryRunRefillLoadPayload[];
 }
 
 export interface CloseDeliveryRunPayload {

@@ -25,6 +25,7 @@ import {
 import { ProductFormModal } from "./ProductFormModal";
 import { UpdateCostModal } from "./UpdateCostModal";
 import type { ProductCost } from "@/types/products";
+import { baseUnitLabel } from "@/types/products";
 
 function formatMoney(value: number | null | undefined) {
   if (value == null || Number.isNaN(value)) return "—";
@@ -152,6 +153,15 @@ export function ProductDetailView() {
 
       <div className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 sm:grid-cols-2 lg:grid-cols-4">
         <div>
+          <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">Base unit</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {baseUnitLabel(product.baseUnit ?? "PCS")}
+            {product.hasPackHelper && product.unitsPerPack && product.packLabel
+              ? ` · ${product.unitsPerPack}/${product.packLabel}`
+              : ""}
+          </p>
+        </div>
+        <div>
           <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">Size</p>
           <p className="mt-1 text-sm font-semibold text-slate-900">
             {product.volume != null
@@ -161,7 +171,7 @@ export function ProductDetailView() {
         </div>
         <div>
           <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">
-            Selling Price
+            Price / {baseUnitLabel(product.baseUnit ?? "PCS")}
           </p>
           <p className="mt-1 text-sm font-semibold text-slate-900">
             {formatMoney(product.defaultSellingPrice)}

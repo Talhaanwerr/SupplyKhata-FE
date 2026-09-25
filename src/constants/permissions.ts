@@ -128,6 +128,33 @@ export const PERMISSIONS = {
     MANAGE: "payments:manage",
   },
 
+  // ─── Refill batches (plant fill log) ───────────────────────────────────────
+  REFILL: {
+    CREATE: "refill:create",
+    READ: "refill:read",
+    UPDATE: "refill:update",
+    DELETE: "refill:delete",
+    MANAGE: "refill:manage",
+  },
+
+  // ─── Expenses ───────────────────────────────────────────────────────────────
+  EXPENSES: {
+    CREATE: "expenses:create",
+    READ: "expenses:read",
+    UPDATE: "expenses:update",
+    DELETE: "expenses:delete",
+    MANAGE: "expenses:manage",
+  },
+
+  // ─── Cash handovers ─────────────────────────────────────────────────────────
+  HANDOVERS: {
+    CREATE: "handovers:create",
+    READ: "handovers:read",
+    UPDATE: "handovers:update",
+    DELETE: "handovers:delete",
+    MANAGE: "handovers:manage",
+  },
+
   // ─── Ledger ─────────────────────────────────────────────────────────────────
   LEDGER: {
     CREATE: "ledger:create",
@@ -167,6 +194,33 @@ export const PERMISSIONS = {
     READ: "feature-flags:read",
     UPDATE: "feature-flags:update",
     MANAGE: "feature-flags:manage",
+  },
+
+  // ─── Containers (owned inventory + balances) ────────────────────────────────
+  CONTAINERS: {
+    CREATE: "containers:create",
+    READ: "containers:read",
+    UPDATE: "containers:update",
+    DELETE: "containers:delete",
+    MANAGE: "containers:manage",
+  },
+
+  // ─── Reports / Dashboard ────────────────────────────────────────────────────
+  REPORTS: {
+    CREATE: "reports:create",
+    READ: "reports:read",
+    UPDATE: "reports:update",
+    DELETE: "reports:delete",
+    MANAGE: "reports:manage",
+  },
+
+  // ─── Collections (field collection workflow) ────────────────────────────────
+  COLLECTIONS: {
+    CREATE: "collections:create",
+    READ: "collections:read",
+    UPDATE: "collections:update",
+    DELETE: "collections:delete",
+    MANAGE: "collections:manage",
   },
 } as const;
 

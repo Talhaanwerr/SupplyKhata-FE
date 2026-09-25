@@ -6,6 +6,7 @@ import type {
   CreateCustomerPayload,
   UpdateCustomerPayload,
   ListCustomersParams,
+  CustomerContainerBalanceRow,
 } from "@/types/customers";
 import type {
   CustomerBalance,
@@ -76,4 +77,16 @@ export const customersApi = {
         source: "CUSTOMER" | "PRODUCT_DEFAULT";
       }>
     >(`/customers/${id}/price?productId=${encodeURIComponent(productId)}`),
+
+  containerBalance: (id: string) =>
+    apiClient.get<ApiEnvelope<CustomerContainerBalanceRow[]>>(`/customers/${id}/container-balance`),
+
+  adjustContainers: (
+    id: string,
+    payload: { productId: string; quantityDelta: number; notes?: string | null }
+  ) =>
+    apiClient.post<ApiEnvelope<CustomerContainerBalanceRow[]>>(
+      `/customers/${id}/container-adjustments`,
+      payload
+    ),
 };
