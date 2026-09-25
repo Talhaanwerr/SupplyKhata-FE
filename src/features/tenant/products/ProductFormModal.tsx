@@ -264,7 +264,7 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
             </p>
           </FormField>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <FormField label="Volume (optional)" error={errors.volume?.message}>
               <Input type="number" step="any" placeholder="19" {...register("volume")} />
             </FormField>
@@ -282,7 +282,7 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
             <p className="text-xs text-slate-500">
               For cartons/crates only. Delivery can enter packs + loose; system stores pieces.
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <FormField label="Pack label" error={errors.packLabel?.message}>
                 <Input placeholder="CTN / Crate" {...register("packLabel")} />
               </FormField>

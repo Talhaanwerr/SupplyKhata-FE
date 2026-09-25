@@ -65,7 +65,7 @@ export function DataExportSection() {
 
   return (
     <PermissionGuardAny permissions={[PERMISSIONS.USERS.READ, PERMISSIONS.AUDIT_LOGS.READ]}>
-      <div className="rounded-xl border border-slate-200 bg-white p-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
         <h2 className="mb-1 text-base font-semibold text-slate-900">Data Export</h2>
         <p className="mb-5 text-sm text-slate-500">
           Download your workspace data as CSV. Files include members and activity history you are

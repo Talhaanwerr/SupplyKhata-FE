@@ -198,11 +198,11 @@ export function CollectionsView() {
           description="Field collection list, visits, and performance"
         />
 
-        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+        <div className="-mx-1 flex gap-2 overflow-x-auto border-b border-slate-200 px-1 pb-2">
           <button
             type="button"
             onClick={() => setTab("list")}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap ${
               tab === "list" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
             }`}
           >
@@ -211,7 +211,7 @@ export function CollectionsView() {
           <button
             type="button"
             onClick={() => setTab("performance")}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap ${
               tab === "performance" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
             }`}
           >
@@ -221,15 +221,9 @@ export function CollectionsView() {
 
         {tab === "list" ? (
           <>
-            <div className="flex flex-wrap gap-3">
-              <Input
-                type="date"
-                className="w-auto"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               <Select
-                className="w-auto"
                 value={bucket}
                 onChange={(e) => setBucket(e.target.value as CollectionBucket)}
               >
@@ -239,7 +233,7 @@ export function CollectionsView() {
                   </option>
                 ))}
               </Select>
-              <Select className="w-auto" value={areaId} onChange={(e) => setAreaId(e.target.value)}>
+              <Select value={areaId} onChange={(e) => setAreaId(e.target.value)}>
                 <option value="">All areas</option>
                 {areas.map((a: { id: string; name: string }) => (
                   <option key={a.id} value={a.id}>
@@ -248,11 +242,7 @@ export function CollectionsView() {
                 ))}
               </Select>
               {canManage && (
-                <Select
-                  className="w-auto"
-                  value={riderId}
-                  onChange={(e) => setRiderId(e.target.value)}
-                >
+                <Select value={riderId} onChange={(e) => setRiderId(e.target.value)}>
                   <option value="">All riders</option>
                   {(ridersQuery.data?.data?.items ?? []).map((r) => (
                     <option key={r.id} value={r.id}>
@@ -263,9 +253,9 @@ export function CollectionsView() {
               )}
               <Input
                 placeholder="Search name / phone"
-                className="w-52"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                className="sm:col-span-2 lg:col-span-1 xl:col-span-1"
               />
             </div>
 
@@ -314,8 +304,13 @@ export function CollectionsView() {
                         <td className="px-4 py-3 font-medium tabular-nums">{money(row.balance)}</td>
                         <td className="px-4 py-3 text-right">
                           <PermissionGuard permission={PERMISSIONS.COLLECTIONS.CREATE}>
-                            <Button size="sm" variant="outline" onClick={() => openVisit(row)}>
-                              Collect / Update
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="whitespace-nowrap"
+                              onClick={() => openVisit(row)}
+                            >
+                              Collect
                             </Button>
                           </PermissionGuard>
                         </td>
@@ -328,20 +323,10 @@ export function CollectionsView() {
           </>
         ) : (
           <>
-            <div className="flex flex-wrap gap-3">
-              <Input
-                type="date"
-                className="w-auto"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-              <Input
-                type="date"
-                className="w-auto"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-              />
-              <Select className="w-auto" value={areaId} onChange={(e) => setAreaId(e.target.value)}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+              <Select value={areaId} onChange={(e) => setAreaId(e.target.value)}>
                 <option value="">All areas</option>
                 {areas.map((a: { id: string; name: string }) => (
                   <option key={a.id} value={a.id}>
@@ -350,11 +335,7 @@ export function CollectionsView() {
                 ))}
               </Select>
               {canManage && (
-                <Select
-                  className="w-auto"
-                  value={riderId}
-                  onChange={(e) => setRiderId(e.target.value)}
-                >
+                <Select value={riderId} onChange={(e) => setRiderId(e.target.value)}>
                   <option value="">All collectors</option>
                   {(ridersQuery.data?.data?.items ?? []).map((r) => (
                     <option key={r.id} value={r.id}>

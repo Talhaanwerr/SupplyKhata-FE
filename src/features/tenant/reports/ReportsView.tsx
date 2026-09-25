@@ -191,13 +191,13 @@ export function ReportsView() {
           }
         />
 
-        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+        <div className="-mx-1 flex gap-2 overflow-x-auto border-b border-slate-200 px-1 pb-2">
           {visibleTabs.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+              className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap ${
                 tab === t.id
                   ? "bg-slate-900 text-white"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -208,34 +208,20 @@ export function ReportsView() {
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {tab === "daily-sales" && (
-            <Input
-              type="date"
-              className="w-auto"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           )}
           {tab === "monthly-summary" && (
             <>
-              <Select
-                className="w-auto"
-                value={String(month)}
-                onChange={(e) => setMonth(Number(e.target.value))}
-              >
+              <Select value={String(month)} onChange={(e) => setMonth(Number(e.target.value))}>
                 {Array.from({ length: 12 }, (_, i) => (
                   <option key={i + 1} value={i + 1}>
                     {new Date(2000, i, 1).toLocaleString(undefined, { month: "long" })}
                   </option>
                 ))}
               </Select>
-              <Input
-                type="number"
-                className="w-28"
-                value={year}
-                onChange={(e) => setYear(Number(e.target.value))}
-              />
+              <Input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} />
             </>
           )}
           {(tab === "product-performance" ||
@@ -243,22 +229,12 @@ export function ReportsView() {
             tab === "vehicle-performance" ||
             tab === "expenses") && (
             <>
-              <Input
-                type="date"
-                className="w-auto"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-              <Input
-                type="date"
-                className="w-auto"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-              />
+              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
             </>
           )}
           {tab === "rider-collection" && (
-            <Select className="w-auto" value={riderId} onChange={(e) => setRiderId(e.target.value)}>
+            <Select value={riderId} onChange={(e) => setRiderId(e.target.value)}>
               <option value="">All riders</option>
               {(ridersQuery.data?.data?.items ?? []).map((r) => (
                 <option key={r.id} value={r.id}>
@@ -268,11 +244,7 @@ export function ReportsView() {
             </Select>
           )}
           {tab === "vehicle-performance" && (
-            <Select
-              className="w-auto"
-              value={vehicleId}
-              onChange={(e) => setVehicleId(e.target.value)}
-            >
+            <Select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)}>
               <option value="">All vehicles</option>
               {(vehiclesQuery.data?.data?.items ?? []).map((v) => (
                 <option key={v.id} value={v.id}>
@@ -285,13 +257,12 @@ export function ReportsView() {
           {tab === "expenses" && (
             <Input
               placeholder="Search title…"
-              className="w-48"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           )}
           {tab === "container-inventory" && (
-            <Button asChild variant="outline" size="sm">
+            <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
               <Link href="/container-inventory">Open full inventory</Link>
             </Button>
           )}

@@ -336,7 +336,7 @@ export function TenantSettingsForm() {
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Organization profile */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
           <h2 className="mb-1 text-base font-semibold text-slate-900">Organization Profile</h2>
           <p className="mb-5 text-sm text-slate-500">Basic identity shown across the workspace.</p>
 
@@ -409,7 +409,7 @@ export function TenantSettingsForm() {
         </div>
 
         {/* Regional & billing prefs */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
           <h2 className="mb-1 text-base font-semibold text-slate-900">Regional & Billing</h2>
           <p className="mb-5 text-sm text-slate-500">
             Formats used in reports, invoices, and dates.
@@ -469,7 +469,7 @@ export function TenantSettingsForm() {
       <ServedAreasSection />
 
       {/* Allowed domains */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
         <h2 className="mb-1 text-base font-semibold text-slate-900">Allowed Email Domains</h2>
         <p className="mb-4 text-sm text-slate-500">
           Restrict who can join this workspace by email domain. Only users with matching email
@@ -483,13 +483,13 @@ export function TenantSettingsForm() {
               {domains.map((d) => (
                 <span
                   key={d}
-                  className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-medium text-slate-700"
+                  className="flex max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-medium break-all text-slate-700"
                 >
                   @{d}
                   <button
                     type="button"
                     onClick={() => removeDomain(d)}
-                    className="rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                    className="shrink-0 rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
                     aria-label={`Remove ${d}`}
                   >
                     <X className="h-3 w-3" />
@@ -500,7 +500,7 @@ export function TenantSettingsForm() {
           )}
 
           {/* Add domain input */}
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <div className="relative min-w-0 flex-1">
               <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-slate-400">
                 @
@@ -516,7 +516,12 @@ export function TenantSettingsForm() {
                 className="pl-7"
               />
             </div>
-            <Button type="button" variant="outline" onClick={addDomain}>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full shrink-0 sm:w-auto"
+              onClick={addDomain}
+            >
               <Plus className="h-4 w-4" />
               Add
             </Button>
@@ -526,7 +531,7 @@ export function TenantSettingsForm() {
       </div>
 
       {/* Table preferences */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
         <h2 className="mb-1 text-base font-semibold text-slate-900">Table preferences</h2>
         <p className="mb-4 text-sm text-slate-500">
           Choose how many rows appear on each table page.
@@ -553,14 +558,14 @@ export function TenantSettingsForm() {
       <DataExportSection />
 
       {/* Danger zone */}
-      <div className="rounded-xl border border-red-200 bg-white p-6">
+      <div className="rounded-xl border border-red-200 bg-white p-4 sm:p-6">
         <h2 className="mb-1 text-base font-semibold text-red-700">Danger Zone</h2>
         <p className="mb-5 text-sm text-slate-500">
           These actions are irreversible. Please proceed with caution.
         </p>
 
-        <div className="flex items-start justify-between gap-4 rounded-lg border border-red-100 bg-red-50 p-4">
-          <div>
+        <div className="flex flex-col gap-3 rounded-lg border border-red-100 bg-red-50 p-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0">
             <p className="text-sm font-medium text-red-900">Delete this workspace</p>
             <p className="mt-0.5 text-sm text-red-700">
               Permanently removes all data, members, and settings. This cannot be undone.
@@ -571,7 +576,7 @@ export function TenantSettingsForm() {
               type="button"
               variant="destructive"
               onClick={() => setDeleteOpen(true)}
-              className="shrink-0"
+              className="w-full shrink-0 sm:w-auto"
             >
               Delete Workspace
             </Button>

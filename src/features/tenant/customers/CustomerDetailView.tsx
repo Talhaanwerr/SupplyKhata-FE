@@ -137,7 +137,7 @@ export function CustomerDetailView() {
         </div>
       </div>
 
-      <div className="flex gap-2 border-b border-slate-200">
+      <div className="-mx-1 flex gap-2 overflow-x-auto border-b border-slate-200 px-1">
         {(
           [
             ["pricing", "Pricing"],
@@ -149,7 +149,7 @@ export function CustomerDetailView() {
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={`border-b-2 px-3 py-2 text-sm font-medium ${
+            className={`shrink-0 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap ${
               activeTab === key
                 ? "border-slate-900 text-slate-900"
                 : "border-transparent text-slate-500 hover:text-slate-800"

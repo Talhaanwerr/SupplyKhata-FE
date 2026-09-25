@@ -120,7 +120,7 @@ export function ServedAreasSection() {
 
   if (isLoading) {
     return (
-      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-6">
+      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
         <LoadingSkeleton className="h-6 w-40" />
         <LoadingSkeleton className="h-10 w-full" />
         <LoadingSkeleton className="h-10 w-2/3" />
@@ -139,7 +139,7 @@ export function ServedAreasSection() {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
       <h2 className="mb-1 text-base font-semibold text-slate-900">Served Areas</h2>
       <p className="mb-5 text-sm text-slate-500">
         Areas you deliver to. These appear in the customer area dropdown. New areas created while
@@ -147,7 +147,7 @@ export function ServedAreasSection() {
       </p>
 
       <PermissionGuard permission={PERMISSIONS.AREAS.CREATE}>
-        <div className="mb-5 flex gap-2">
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="min-w-0 flex-1">
             <FormField label="Add area" error={nameError}>
               <Input
@@ -167,16 +167,19 @@ export function ServedAreasSection() {
               />
             </FormField>
           </div>
-          <div className="flex items-end">
-            <Button type="button" onClick={handleAdd} disabled={create.isPending}>
-              {create.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
-              Add
-            </Button>
-          </div>
+          <Button
+            type="button"
+            className="w-full shrink-0 sm:w-auto"
+            onClick={handleAdd}
+            disabled={create.isPending}
+          >
+            {create.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            Add
+          </Button>
         </div>
       </PermissionGuard>
 
@@ -186,40 +189,44 @@ export function ServedAreasSection() {
           description="Add your first delivery area so you can assign it when creating customers."
         />
       ) : (
-        <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+        <ul className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
           {areas.map((area) => (
-            <li key={area.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+            <li key={area.id} className="px-3 py-3 sm:px-4">
               {editing?.id === area.id ? (
-                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Input
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
-                    className="max-w-xs"
+                    className="w-full sm:max-w-xs"
                     autoFocus
                     maxLength={100}
                   />
-                  <Button type="button" size="sm" onClick={saveEdit} disabled={update.isPending}>
-                    {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Save
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setEditing(null)}
-                    disabled={update.isPending}
-                  >
-                    Cancel
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" onClick={saveEdit} disabled={update.isPending}>
+                      {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                      Save
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setEditing(null)}
+                      disabled={update.isPending}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
               ) : (
-                <>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">
-                    {area.name}
-                  </span>
-                  <StatusBadge status={area.isActive ? "ACTIVE" : "INACTIVE"} />
-                  <PermissionGuard permission={PERMISSIONS.AREAS.UPDATE}>
-                    <div className="flex items-center gap-1">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 truncate text-sm font-medium text-slate-900">
+                      {area.name}
+                    </span>
+                    <StatusBadge status={area.isActive ? "ACTIVE" : "INACTIVE"} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <PermissionGuard permission={PERMISSIONS.AREAS.UPDATE}>
                       <Button
                         type="button"
                         size="sm"
@@ -238,21 +245,21 @@ export function ServedAreasSection() {
                       >
                         {area.isActive ? "Deactivate" : "Activate"}
                       </Button>
-                    </div>
-                  </PermissionGuard>
-                  <PermissionGuard permission={PERMISSIONS.AREAS.DELETE}>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="text-red-600 hover:text-red-700"
-                      onClick={() => setDeleteTarget(area)}
-                      aria-label={`Delete ${area.name}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </PermissionGuard>
-                </>
+                    </PermissionGuard>
+                    <PermissionGuard permission={PERMISSIONS.AREAS.DELETE}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 hover:text-red-700"
+                        onClick={() => setDeleteTarget(area)}
+                        aria-label={`Delete ${area.name}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </PermissionGuard>
+                  </div>
+                </div>
               )}
             </li>
           ))}

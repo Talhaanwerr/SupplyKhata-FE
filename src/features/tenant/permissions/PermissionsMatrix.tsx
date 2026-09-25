@@ -127,13 +127,13 @@ export function PermissionsMatrix() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <label className="text-sm font-medium text-slate-700">Permissions for:</label>
         <Select
-          className="w-52"
           value={selectedRoleId}
           onChange={(e) => selectRole(e.target.value)}
           disabled={isLoading}
+          className="sm:max-w-xs"
         >
           <option value="">— Select a role —</option>
           {roles.map((r) => (
@@ -149,7 +149,7 @@ export function PermissionsMatrix() {
           <span className="text-xs text-slate-500">Click cells to grant or revoke, then save.</span>
         )}
         {editable && (
-          <div className="ms-auto flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:ms-auto sm:w-auto">
             <Button
               variant="outline"
               size="sm"

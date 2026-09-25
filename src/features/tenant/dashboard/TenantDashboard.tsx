@@ -131,14 +131,14 @@ export function TenantDashboard() {
           activeTenant?.name ? `Welcome to ${activeTenant.name}` : "Welcome to your workspace"
         }
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <label className="text-sm text-slate-500" htmlFor="dash-date">
               Date
             </label>
             <Input
               id="dash-date"
               type="date"
-              className="w-auto"
+              className="w-full sm:w-auto"
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />
