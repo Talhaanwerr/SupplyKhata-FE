@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Eye, Loader2, Pencil, Plus, XCircle } from "lucide-react";
+import { ArrowLeft, CalendarDays, Eye, Loader2, Pencil, Plus, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -33,6 +33,7 @@ import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { customersApi } from "@/lib/customers-api";
 import { deliveriesApi } from "@/lib/deliveries-api";
 import { deliveryRunsApi } from "@/lib/delivery-runs-api";
+import { plannedStopsApi } from "@/lib/planned-stops-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
 import { INT_RE, MONEY_RE, QTY_RE } from "@/lib/form-number";
 import { PERMISSIONS } from "@/constants/permissions";
@@ -42,10 +43,12 @@ import {
   CUSTOMER_CONTAINER_BALANCE_QUERY_KEY,
   CUSTOMER_DETAIL_QUERY_KEY,
   DELIVERIES_QUERY_KEY,
+  DELIVERY_CONTEXT_QUERY_KEY,
   DELIVERY_RUN_DETAIL_QUERY_KEY,
   DELIVERY_RUNS_QUERY_KEY,
   DELIVERY_RUN_SUMMARY_QUERY_KEY,
   PAYMENTS_DASHBOARD_QUERY_KEY,
+  PLANNED_STOPS_QUERY_KEY,
   PRODUCTS_QUERY_KEY,
 } from "@/constants/query-keys";
 import { productsApi } from "@/lib/products-api";
@@ -53,6 +56,7 @@ import type { DeliveryDetail, DeliveryRunStockPayload, PaymentMethod } from "@/t
 import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 import type { Product } from "@/types/products";
 import { baseUnitLabel } from "@/types/products";
+import type { PlannedStop } from "@/types/planned-stops";
 
 const itemSchema = z.object({
   productId: z.string().min(1),
@@ -172,6 +176,18 @@ export function DeliveryRunDetailView() {
   const [cancelDelivery, setCancelDelivery] = useState<DeliveryDetail | null>(null);
   const [viewDelivery, setViewDelivery] = useState<DeliveryDetail | null>(null);
 
+  // "Add from daily list" dialog state
+  const [dailyListOpen, setDailyListOpen] = useState(false);
+  const [selectedStopIds, setSelectedStopIds] = useState<Set<string>>(new Set());
+
+  // Planned stop linked to current Add Delivery form
+  const [linkedStopId, setLinkedStopId] = useState<string | null>(null);
+  // Override fields for the linked planned stop (editable in delivery form)
+  const [plannedStopOverride, setPlannedStopOverride] = useState<{
+    planDate: string;
+    items: Record<string, string>; // productId → qty string
+  } | null>(null);
+
   const runQuery = useQuery({
     queryKey: [DELIVERY_RUN_DETAIL_QUERY_KEY, runId],
     queryFn: () => deliveryRunsApi.get(runId),
@@ -189,6 +205,13 @@ export function DeliveryRunDetailView() {
   const productsQuery = useQuery({
     queryKey: [PRODUCTS_QUERY_KEY, "delivery-form"],
     queryFn: () => productsApi.list({ isActive: true }),
+  });
+
+  // Today's PLANNED stops for "Add from daily list"
+  const dailyStopsQuery = useQuery({
+    queryKey: [PLANNED_STOPS_QUERY_KEY, "run-include", today()],
+    queryFn: () => plannedStopsApi.list({ date: today(), status: "PLANNED" }),
+    enabled: dailyListOpen,
   });
 
   const run = runQuery.data?.data;
@@ -241,6 +264,13 @@ export function DeliveryRunDetailView() {
     queryFn: () => customersApi.containerBalance(selectedCustomerId),
     enabled: !!selectedCustomerId && containersEnabled,
   });
+  // Delivery context for currently selected customer (upcoming planned stop)
+  const deliveryContextQuery = useQuery({
+    queryKey: [DELIVERY_CONTEXT_QUERY_KEY, selectedCustomerId],
+    queryFn: () => plannedStopsApi.deliveryContext(selectedCustomerId),
+    enabled: !!selectedCustomerId && deliveryOpen,
+  });
+  const upcomingPlannedStop = deliveryContextQuery.data?.data?.upcomingPlannedStop ?? null;
   const selectedCustomer = customerDetailQuery.data?.data;
   const selectedBalance = customerBalanceQuery.data?.data?.balance ?? null;
   const containersWithCustomer = (customerContainersQuery.data?.data ?? []).filter(
@@ -299,6 +329,44 @@ export function DeliveryRunDetailView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- products read via productIdsKey
   }, [productIdsKey, resetDeliveryForm, resetCloseForm]);
 
+  // When upcoming planned stop loads for a customer, initialize override state and prefill qtys
+  useEffect(() => {
+    if (!upcomingPlannedStop || !deliveryOpen) return;
+    setLinkedStopId(upcomingPlannedStop.id);
+    setPlannedStopOverride({
+      planDate: upcomingPlannedStop.planDate,
+      items: Object.fromEntries(
+        upcomingPlannedStop.items.map((i) => [i.productId, String(i.quantity)])
+      ),
+    });
+    // Prefill product quantities from planned stop
+    const currentItems = deliveryForm.getValues("items");
+    const updated = currentItems.map((item) => {
+      const planned = upcomingPlannedStop.items.find((i) => i.productId === item.productId);
+      if (planned && planned.quantity > 0) {
+        return { ...item, quantityDelivered: String(planned.quantity) };
+      }
+      return item;
+    });
+    deliveryForm.setValue("items", updated);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upcomingPlannedStop?.id, deliveryOpen]);
+
+  // Reset linked stop state when customer changes or dialog closes
+  useEffect(() => {
+    if (!deliveryOpen) {
+      setLinkedStopId(null);
+      setPlannedStopOverride(null);
+    }
+  }, [deliveryOpen]);
+
+  useEffect(() => {
+    if (selectedCustomerId) {
+      setLinkedStopId(null);
+      setPlannedStopOverride(null);
+    }
+  }, [selectedCustomerId]);
+
   function openEditOpening() {
     if (!run) return;
     const opening = run.stocks.filter((stock) => stock.stockType === "OPENING");
@@ -341,16 +409,61 @@ export function DeliveryRunDetailView() {
     qc.invalidateQueries({ queryKey: [DELIVERY_RUN_DETAIL_QUERY_KEY, runId] });
     qc.invalidateQueries({ queryKey: [DELIVERY_RUN_SUMMARY_QUERY_KEY, runId] });
     qc.invalidateQueries({ queryKey: [DELIVERIES_QUERY_KEY] });
+    qc.invalidateQueries({ queryKey: [PLANNED_STOPS_QUERY_KEY] });
   };
 
+  // Include planned stops in this run
+  const includeStopsMutation = useApiMutation(
+    () => {
+      const ids = Array.from(selectedStopIds);
+      if (!ids.length) throw new Error("Select at least one stop");
+      return plannedStopsApi.includeInRun(runId, ids);
+    },
+    {
+      onSuccess: () => {
+        invalidateRun();
+        toast({ title: "Stops added to run", variant: "success" });
+        setDailyListOpen(false);
+        setSelectedStopIds(new Set());
+      },
+      onError: (err) =>
+        toast({
+          title: "Could not add stops",
+          description: getSafeErrorMessage(err),
+          variant: "error",
+        }),
+    }
+  );
+
   const createDelivery = useApiMutation(
-    (values: DeliveryFormValues) => {
+    async (values: DeliveryFormValues) => {
       const promisedPayDate = values.promisedPayDate?.trim() || null;
       const promisedAmountRaw = values.promisedAmount?.trim() ?? "";
       const promisedAmount =
         promisedPayDate && promisedAmountRaw && Number(promisedAmountRaw) > 0
           ? Number(promisedAmountRaw)
           : null;
+
+      // If a planned stop is linked and overrides have changed, patch it first
+      if (linkedStopId && plannedStopOverride && upcomingPlannedStop) {
+        const origDate = upcomingPlannedStop.planDate;
+        const origItems = upcomingPlannedStop.items;
+        const dateChanged = plannedStopOverride.planDate !== origDate;
+        const itemsChanged = origItems.some(
+          (i) =>
+            String(i.quantity) !== (plannedStopOverride.items[i.productId] ?? String(i.quantity))
+        );
+        if (dateChanged || itemsChanged) {
+          await plannedStopsApi.patch(linkedStopId, {
+            planDate: plannedStopOverride.planDate,
+            items: origItems.map((i) => ({
+              productId: i.productId,
+              quantity: Number(plannedStopOverride.items[i.productId] ?? i.quantity),
+            })),
+          });
+        }
+      }
+
       return deliveriesApi.create({
         deliveryRunId: runId,
         customerId: values.customerId,
@@ -360,6 +473,7 @@ export function DeliveryRunDetailView() {
         notes: values.notes?.trim() || null,
         promisedPayDate,
         promisedAmount,
+        plannedStopId: linkedStopId ?? null,
         items: values.items
           .filter((item) => Number(item.quantityDelivered) > 0 || Number(item.emptiesReceived) > 0)
           .map((item) => {
@@ -393,6 +507,8 @@ export function DeliveryRunDetailView() {
             emptiesReceived: "0",
           })),
         });
+        setLinkedStopId(null);
+        setPlannedStopOverride(null);
         setDeliveryOpen(false);
         toast({ title: "Delivery saved", variant: "success" });
       },
@@ -679,6 +795,18 @@ export function DeliveryRunDetailView() {
                     Edit Opening
                   </Button>
                 </PermissionGuard>
+                <PermissionGuard permission={PERMISSIONS.PLANNED_STOPS.READ}>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedStopIds(new Set());
+                      setDailyListOpen(true);
+                    }}
+                  >
+                    <CalendarDays className="h-4 w-4" />
+                    Add from daily list
+                  </Button>
+                </PermissionGuard>
                 <PermissionGuard permission={PERMISSIONS.DELIVERIES.CREATE}>
                   <Button
                     onClick={() => {
@@ -894,6 +1022,90 @@ export function DeliveryRunDetailView() {
                     )}
                   </div>
                 )}
+
+                {/* Scheduled delivery card */}
+                {deliveryContextQuery.isLoading ? (
+                  <p className="mt-3 text-xs text-slate-400">Checking schedule…</p>
+                ) : upcomingPlannedStop && plannedStopOverride ? (
+                  <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold tracking-wide text-blue-800 uppercase">
+                        Scheduled delivery
+                      </p>
+                      <button
+                        type="button"
+                        className="text-xs text-blue-600 underline"
+                        onClick={() => {
+                          setLinkedStopId(null);
+                          setPlannedStopOverride(null);
+                        }}
+                      >
+                        Unlink
+                      </button>
+                    </div>
+                    <div className="mb-2 grid gap-2 sm:grid-cols-2">
+                      <FormField label="Plan date">
+                        <Input
+                          type="date"
+                          value={plannedStopOverride.planDate}
+                          onChange={(e) =>
+                            setPlannedStopOverride((prev) =>
+                              prev ? { ...prev, planDate: e.target.value } : prev
+                            )
+                          }
+                        />
+                      </FormField>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-blue-700">Planned quantities</p>
+                      {upcomingPlannedStop.items.map((item) => {
+                        const product = products.find((p) => p.id === item.productId);
+                        const unit = product
+                          ? baseUnitLabel(product.baseUnit ?? "PCS")
+                          : item.baseUnit;
+                        return (
+                          <div key={item.productId} className="flex items-center gap-2">
+                            <span className="flex-1 text-xs text-blue-800">{item.productName}</span>
+                            <div className="w-24">
+                              <Input
+                                inputMode={product?.allowFractionalQty ? "decimal" : "numeric"}
+                                value={
+                                  plannedStopOverride.items[item.productId] ?? String(item.quantity)
+                                }
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setPlannedStopOverride((prev) =>
+                                    prev
+                                      ? {
+                                          ...prev,
+                                          items: { ...prev.items, [item.productId]: val },
+                                        }
+                                      : prev
+                                  );
+                                  // Also update delivery form qty for this product
+                                  const idx = deliveryForm
+                                    .getValues("items")
+                                    .findIndex((i) => i.productId === item.productId);
+                                  if (idx >= 0) {
+                                    deliveryForm.setValue(`items.${idx}.quantityDelivered`, val, {
+                                      shouldValidate: false,
+                                    });
+                                  }
+                                }}
+                                placeholder={`${item.quantity} ${unit}`}
+                              />
+                            </div>
+                            <span className="w-8 text-xs text-blue-600">{unit}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1 text-xs text-blue-600">
+                      Changes to plan date / qty will be saved on the stop before creating the
+                      delivery.
+                    </p>
+                  </div>
+                ) : null}
               </div>
             )}
 
@@ -1340,6 +1552,85 @@ export function DeliveryRunDetailView() {
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setViewDelivery(null)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add from daily list dialog */}
+      <Dialog open={dailyListOpen} onOpenChange={(v) => !v && setDailyListOpen(false)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add from Daily List</DialogTitle>
+            <DialogDescription>
+              Select planned stops for today to include in this run. Their status will change to
+              INCLUDED.
+            </DialogDescription>
+          </DialogHeader>
+          {dailyStopsQuery.isLoading ? (
+            <p className="text-sm text-slate-500">Loading today&apos;s stops…</p>
+          ) : (dailyStopsQuery.data?.data?.items ?? []).length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No planned stops for today. Set up customer schedules or add manual stops from the
+              Daily List page.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {(dailyStopsQuery.data?.data?.items ?? []).map((stop: PlannedStop) => {
+                const checked = selectedStopIds.has(stop.id);
+                return (
+                  <label
+                    key={stop.id}
+                    className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                      checked
+                        ? "border-blue-300 bg-blue-50"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        setSelectedStopIds((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(stop.id);
+                          else next.delete(stop.id);
+                          return next;
+                        });
+                      }}
+                      className="mt-0.5 h-4 w-4 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-slate-900">{stop.customerName}</p>
+                      <p className="text-xs text-slate-500">
+                        {stop.areaName ?? "—"} · {stop.customerPhone}
+                      </p>
+                      {stop.items.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                          {stop.items.map((item) => (
+                            <span key={item.productId} className="text-xs text-slate-600">
+                              {item.productName}: {item.quantity}{" "}
+                              {baseUnitLabel(item.baseUnit as "PCS" | "LTR" | "KG")}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDailyListOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={selectedStopIds.size === 0 || includeStopsMutation.isPending}
+              onClick={() => includeStopsMutation.mutateAsync()}
+            >
+              {includeStopsMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Include {selectedStopIds.size > 0 ? `(${selectedStopIds.size})` : ""} stops
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -165,6 +165,8 @@ export interface CreateDeliveryPayload {
   notes?: string | null;
   promisedPayDate?: string | null;
   promisedAmount?: number | null;
+  /** Optional: link this delivery to a planned stop (marks stop COMPLETED). */
+  plannedStopId?: string | null;
   items: Array<{
     productId: string;
     quantityDelivered: number;

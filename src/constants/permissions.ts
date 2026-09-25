@@ -222,6 +222,24 @@ export const PERMISSIONS = {
     DELETE: "collections:delete",
     MANAGE: "collections:manage",
   },
+
+  // ─── Schedules (recurring delivery cadences) ─────────────────────────────
+  SCHEDULES: {
+    CREATE: "schedules:create",
+    READ: "schedules:read",
+    UPDATE: "schedules:update",
+    DELETE: "schedules:delete",
+    MANAGE: "schedules:manage",
+  },
+
+  // ─── Planned Stops (daily delivery list) ─────────────────────────────────
+  PLANNED_STOPS: {
+    CREATE: "planned-stops:create",
+    READ: "planned-stops:read",
+    UPDATE: "planned-stops:update",
+    DELETE: "planned-stops:delete",
+    MANAGE: "planned-stops:manage",
+  },
 } as const;
 
 /** Union of every permission string — useful for typing props. */

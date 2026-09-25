@@ -20,10 +20,11 @@ import { CUSTOMER_DETAIL_QUERY_KEY, CUSTOMERS_QUERY_KEY } from "@/constants/quer
 import { CustomerFormModal } from "./CustomerFormModal";
 import { CustomerLedgerTab } from "./CustomerLedgerTab";
 import { CustomerContainerBalanceTab } from "./CustomerContainerBalanceTab";
+import { CustomerDeliveryScheduleTab } from "./CustomerDeliveryScheduleTab";
 import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 
-type Tab = "pricing" | "ledger" | "containers";
+type Tab = "pricing" | "ledger" | "containers" | "schedule";
 
 export function CustomerDetailView() {
   const params = useParams<{ id: string }>();
@@ -143,6 +144,7 @@ export function CustomerDetailView() {
             ["pricing", "Pricing"],
             ["ledger", "Ledger"],
             ...(containersEnabled ? ([["containers", "Container Balance"]] as const) : []),
+            ["schedule", "Delivery Schedule"],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -205,6 +207,8 @@ export function CustomerDetailView() {
       {tab === "containers" && containersEnabled && (
         <CustomerContainerBalanceTab customerId={customerId} />
       )}
+
+      {activeTab === "schedule" && <CustomerDeliveryScheduleTab customerId={customerId} />}
 
       <CustomerFormModal
         open={editOpen}

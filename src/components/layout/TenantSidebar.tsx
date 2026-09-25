@@ -21,6 +21,7 @@ import {
   HandCoins,
   Boxes,
   Banknote,
+  CalendarDays,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
@@ -102,6 +103,12 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: "payments",
     icon: Wallet,
     permissions: [PERMISSIONS.PAYMENTS.READ, PERMISSIONS.PAYMENTS.MANAGE],
+  },
+  {
+    href: "/planned-stops",
+    labelKey: "plannedStops",
+    icon: CalendarDays,
+    permissions: [PERMISSIONS.PLANNED_STOPS.READ, PERMISSIONS.PLANNED_STOPS.MANAGE],
   },
   {
     href: "/collections",

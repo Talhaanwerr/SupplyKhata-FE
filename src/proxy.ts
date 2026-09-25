@@ -41,6 +41,8 @@ const PROTECTED_PREFIXES = [
   "/delivery-runs",
   "/payments",
   "/riders",
+  "/collections",
+  "/planned-stops",
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

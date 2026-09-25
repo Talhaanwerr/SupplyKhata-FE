@@ -43,3 +43,7 @@ export const AUDIT_LOGS_QUERY_KEY = "audit-logs" as const;
 
 export const NOTIFICATIONS_QUERY_KEY = "notifications" as const;
 export const NOTIFICATIONS_UNREAD_COUNT_KEY = "notifications-unread-count" as const;
+
+export const DELIVERY_SCHEDULES_QUERY_KEY = "delivery-schedules" as const;
+export const PLANNED_STOPS_QUERY_KEY = "planned-stops" as const;
+export const DELIVERY_CONTEXT_QUERY_KEY = "delivery-context" as const;
