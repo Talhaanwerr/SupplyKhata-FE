@@ -9,6 +9,7 @@ import { loginSchema, type LoginInput } from "@/schemas/auth";
 import { useAuthStore } from "@/store/auth-store";
 import { ApiError } from "@/lib/api-error";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Loader2 } from "lucide-react";
@@ -78,8 +79,7 @@ function LoginForm() {
           }
           error={errors.password?.message}
         >
-          <Input
-            type="password"
+          <PasswordInput
             placeholder="••••••••"
             autoComplete="current-password"
             aria-invalid={!!errors.password}

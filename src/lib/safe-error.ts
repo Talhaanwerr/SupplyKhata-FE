@@ -12,7 +12,7 @@ export function getSafeErrorMessage(error: unknown): string {
     const msg = error.message?.trim();
     if (!msg) return GENERIC;
     // Truncate overly long / suspicious payloads
-    if (msg.length > 200) return GENERIC;
+    if (msg.length > 280) return GENERIC;
     if (/stack|exception|prisma|sql|econnrefused/i.test(msg)) return GENERIC;
     return humanizeFileValidation(msg);
   }

@@ -9,6 +9,7 @@ import { authApi } from "@/lib/auth";
 import { ApiError } from "@/lib/api-error";
 import { ROUTES } from "@/constants";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Loader2, AlertCircle } from "lucide-react";
@@ -85,8 +86,7 @@ export default function AcceptInvitePage() {
         </FormField>
 
         <FormField label="Password" error={errors.password?.message} required>
-          <Input
-            type="password"
+          <PasswordInput
             placeholder="••••••••"
             autoComplete="new-password"
             aria-invalid={!!errors.password}
@@ -95,8 +95,7 @@ export default function AcceptInvitePage() {
         </FormField>
 
         <FormField label="Confirm password" error={errors.confirmPassword?.message} required>
-          <Input
-            type="password"
+          <PasswordInput
             placeholder="••••••••"
             autoComplete="new-password"
             aria-invalid={!!errors.confirmPassword}

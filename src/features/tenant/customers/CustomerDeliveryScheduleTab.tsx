@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/ui/form-field";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
+import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { deliverySchedulesApi } from "@/lib/delivery-schedules-api";
 import { productsApi } from "@/lib/products-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
@@ -20,6 +21,7 @@ import {
 } from "@/constants/query-keys";
 import type { Product } from "@/types/products";
 import { baseUnitLabel } from "@/types/products";
+import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 import { PermissionGuard } from "@/components/ui/permission-guard";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { DeliverySchedule } from "@/types/delivery-schedule";
@@ -71,6 +73,7 @@ function buildSeededDraft(
 export function CustomerDeliveryScheduleTab({ customerId }: { customerId: string }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { enabled: packHelpersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PACK_HELPERS);
 
   const scheduleQuery = useQuery({
     queryKey: [DELIVERY_SCHEDULES_QUERY_KEY, customerId],
@@ -238,7 +241,7 @@ export function CustomerDeliveryScheduleTab({ customerId }: { customerId: string
                       <p className="text-sm font-medium text-slate-900">{product.name}</p>
                       <p className="text-xs text-slate-500">
                         {unit} · default price {product.defaultSellingPrice}/{unit}
-                        {product.hasPackHelper && product.packLabel
+                        {packHelpersEnabled && product.hasPackHelper && product.packLabel
                           ? ` · pack: ${product.unitsPerPack} ${product.packLabel}`
                           : ""}
                       </p>

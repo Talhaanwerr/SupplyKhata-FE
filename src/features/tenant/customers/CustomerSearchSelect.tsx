@@ -2,21 +2,27 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronsUpDown, Loader2, X } from "lucide-react";
+import { ChevronsUpDown, Loader2, Plus, X } from "lucide-react";
 import { customersApi } from "@/lib/customers-api";
 import { CUSTOMERS_QUERY_KEY } from "@/constants/query-keys";
+import { PERMISSIONS } from "@/constants/permissions";
+import { canAccessAny } from "@/lib/can-access";
+import { useAuthStore } from "@/store/auth-store";
 import { cn } from "@/lib/utils";
-import type { CustomerListItem } from "@/types/customers";
+import type { CustomerDetail, CustomerListItem } from "@/types/customers";
+import { CustomerFormModal } from "./CustomerFormModal";
 
 interface CustomerSearchSelectProps {
   value: string;
-  onChange: (customerId: string, customer?: CustomerListItem | null) => void;
+  onChange: (customerId: string, customer?: CustomerListItem | CustomerDetail | null) => void;
   error?: string;
   disabled?: boolean;
   placeholder?: string;
   /** Preset label when value is set but not yet in search results */
   initialLabel?: string;
   className?: string;
+  /** Show “Add new customer” (default true when user can create). */
+  allowCreate?: boolean;
 }
 
 export function CustomerSearchSelect({
@@ -27,10 +33,19 @@ export function CustomerSearchSelect({
   placeholder = "Search customer by name or phone…",
   initialLabel,
   className,
+  allowCreate = true,
 }: CustomerSearchSelectProps) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
+  const user = useAuthStore((s) => s.user);
+  const canCreate = canAccessAny(user, [
+    PERMISSIONS.CUSTOMERS.CREATE,
+    PERMISSIONS.CUSTOMERS.MANAGE,
+  ]);
+  const showCreate = allowCreate && canCreate && !disabled;
+
   const [open, setOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   /** Label chosen by user pick; kept only while it matches `value`. */
@@ -83,6 +98,19 @@ export function CustomerSearchSelect({
   }, []);
 
   const displayValue = open ? query : selectedLabel;
+
+  function selectCustomer(
+    id: string,
+    name: string,
+    phone: string,
+    customer?: CustomerListItem | CustomerDetail
+  ) {
+    const label = `${name} (${phone})`;
+    setPicked({ id, label });
+    setQuery("");
+    setOpen(false);
+    onChange(id, customer ?? null);
+  }
 
   return (
     <div ref={rootRef} className={cn("relative", className)}>
@@ -142,6 +170,22 @@ export function CustomerSearchSelect({
           role="listbox"
           className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-md"
         >
+          {showCreate && (
+            <li className="sticky top-0 z-[1] border-b border-slate-100 bg-white">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setOpen(false);
+                  setCreateOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                Add new customer
+              </button>
+            </li>
+          )}
           {isFetching && (
             <li className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -151,7 +195,7 @@ export function CustomerSearchSelect({
           {isError && <li className="px-3 py-2 text-sm text-red-600">Could not load customers</li>}
           {!isFetching && !isError && items.length === 0 && (
             <li className="px-3 py-2 text-sm text-slate-500">
-              {debounced ? "No customers found" : "Type to search customers"}
+              {debounced ? "No customers found" : "No active customers"}
             </li>
           )}
           {items.map((c) => (
@@ -162,13 +206,7 @@ export function CustomerSearchSelect({
                   "flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-slate-50",
                   c.id === value && "bg-slate-50"
                 )}
-                onClick={() => {
-                  const label = `${c.name} (${c.phone})`;
-                  setPicked({ id: c.id, label });
-                  setQuery("");
-                  setOpen(false);
-                  onChange(c.id, c);
-                }}
+                onClick={() => selectCustomer(c.id, c.name, c.phone, c)}
               >
                 <span className="font-medium text-slate-900">{c.name}</span>
                 <span className="text-xs text-slate-500">{c.phone}</span>
@@ -177,6 +215,14 @@ export function CustomerSearchSelect({
           ))}
         </ul>
       )}
+
+      <CustomerFormModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(created) => {
+          selectCustomer(created.id, created.name, created.phone, created);
+        }}
+      />
     </div>
   );
 }

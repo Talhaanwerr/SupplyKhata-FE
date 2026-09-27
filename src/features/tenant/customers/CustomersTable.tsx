@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Pencil, Trash2, UserCheck, UserX } from "lucide-react";
+import { Eye, Pencil, UserCheck, UserX } from "lucide-react";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { SearchInput } from "@/components/ui/search-input";
@@ -35,7 +35,6 @@ export function CustomersTable({ createOpen, onCreateClose }: CustomersTableProp
   const [page, setPage] = useState(1);
   const [editCustomer, setEditCustomer] = useState<CustomerDetail | null>(null);
   const [toggleCustomer, setToggleCustomer] = useState<CustomerListItem | null>(null);
-  const [deleteCustomer, setDeleteCustomer] = useState<CustomerListItem | null>(null);
   const pageSize = useUiPrefsStore((s) => s.pageSize);
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -82,10 +81,13 @@ export function CustomersTable({ createOpen, onCreateClose }: CustomersTableProp
         status: row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
       }),
     {
-      onSuccess: () => {
+      onSuccess: (_res, row) => {
         qc.invalidateQueries({ queryKey: [CUSTOMERS_QUERY_KEY] });
         setToggleCustomer(null);
-        toast({ title: "Customer status updated", variant: "success" });
+        toast({
+          title: row.status === "ACTIVE" ? "Customer deactivated" : "Customer activated",
+          variant: "success",
+        });
       },
       onError: (err) => {
         toast({
@@ -93,26 +95,9 @@ export function CustomersTable({ createOpen, onCreateClose }: CustomersTableProp
           description: getSafeErrorMessage(err),
           variant: "error",
         });
-        setToggleCustomer(null);
       },
     }
   );
-
-  const remove = useApiMutation((id: string) => customersApi.remove(id), {
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [CUSTOMERS_QUERY_KEY] });
-      setDeleteCustomer(null);
-      toast({ title: "Customer deleted", variant: "success" });
-    },
-    onError: (err) => {
-      toast({
-        title: "Could not delete customer",
-        description: getSafeErrorMessage(err),
-        variant: "error",
-      });
-      setDeleteCustomer(null);
-    },
-  });
 
   const columns: Column<CustomerListItem>[] = [
     {
@@ -166,7 +151,7 @@ export function CustomersTable({ createOpen, onCreateClose }: CustomersTableProp
             <Button
               variant="ghost"
               size="sm"
-              aria-label="Toggle status"
+              aria-label={row.status === "ACTIVE" ? "Deactivate customer" : "Activate customer"}
               onClick={() => setToggleCustomer(row)}
             >
               {row.status === "ACTIVE" ? (
@@ -176,20 +161,12 @@ export function CustomersTable({ createOpen, onCreateClose }: CustomersTableProp
               )}
             </Button>
           </PermissionGuard>
-          <PermissionGuard permission={PERMISSIONS.CUSTOMERS.DELETE}>
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Delete customer"
-              onClick={() => setDeleteCustomer(row)}
-            >
-              <Trash2 className="h-4 w-4 text-red-600" />
-            </Button>
-          </PermissionGuard>
         </div>
       ),
     },
   ];
+
+  const deactivating = toggleCustomer?.status === "ACTIVE";
 
   return (
     <>
@@ -260,31 +237,16 @@ export function CustomersTable({ createOpen, onCreateClose }: CustomersTableProp
         onConfirm={() => {
           if (toggleCustomer) toggleStatus.mutate(toggleCustomer);
         }}
-        title={toggleCustomer?.status === "ACTIVE" ? "Deactivate Customer" : "Activate Customer"}
+        title={deactivating ? "Deactivate Customer" : "Activate Customer"}
         description={
           toggleCustomer
-            ? `${toggleCustomer.status === "ACTIVE" ? "Deactivate" : "Activate"} "${toggleCustomer.name}"?`
+            ? deactivating
+              ? `Deactivate "${toggleCustomer.name}"? Only allowed when balance is 0 and no containers are with the customer.`
+              : `Activate "${toggleCustomer.name}" again?`
             : ""
         }
-        confirmLabel={toggleCustomer?.status === "ACTIVE" ? "Deactivate" : "Activate"}
+        confirmLabel={deactivating ? "Deactivate" : "Activate"}
         isLoading={toggleStatus.isPending}
-      />
-
-      <ConfirmDialog
-        open={!!deleteCustomer}
-        onClose={() => setDeleteCustomer(null)}
-        onConfirm={() => {
-          if (deleteCustomer) remove.mutate(deleteCustomer.id);
-        }}
-        title="Delete Customer"
-        description={
-          deleteCustomer
-            ? `Delete "${deleteCustomer.name}"? This cannot be undone from the list.`
-            : ""
-        }
-        confirmLabel="Delete"
-        variant="destructive"
-        isLoading={remove.isPending}
       />
     </>
   );

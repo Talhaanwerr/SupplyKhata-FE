@@ -94,3 +94,12 @@ export function baseUnitLabel(unit: ProductBaseUnit): string {
       return "pcs";
   }
 }
+
+/** LTR/KG returnable: sale qty ≠ can count — need an explicit can field. */
+export function needsExplicitPackagingCount(product: {
+  baseUnit: ProductBaseUnit | string;
+  isReturnable: boolean;
+}): boolean {
+  if (!product.isReturnable) return false;
+  return product.baseUnit === "LTR" || product.baseUnit === "KG";
+}

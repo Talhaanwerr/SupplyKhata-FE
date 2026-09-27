@@ -14,10 +14,12 @@ import { PermissionGuard } from "@/components/ui/permission-guard";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
+import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { productsApi } from "@/lib/products-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
 import { PERMISSIONS } from "@/constants/permissions";
 import { PRODUCTS_QUERY_KEY } from "@/constants/query-keys";
+import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 import { ProductFormModal } from "./ProductFormModal";
 import type { Product } from "@/types/products";
 import { baseUnitLabel } from "@/types/products";
@@ -53,6 +55,8 @@ export function ProductsTable({ createOpen, onCreateClose }: ProductsTableProps)
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
+  const { enabled: packHelpersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PACK_HELPERS);
 
   const isActiveFilter = status === "true" ? true : status === "false" ? false : undefined;
 
@@ -100,17 +104,25 @@ export function ProductsTable({ createOpen, onCreateClose }: ProductsTableProps)
       render: (row) => (
         <span className="text-slate-600">
           {baseUnitLabel(row.baseUnit ?? "PCS")}
-          {row.hasPackHelper && row.unitsPerPack && row.packLabel
+          {packHelpersEnabled && row.hasPackHelper && row.unitsPerPack && row.packLabel
             ? ` · ${row.unitsPerPack}/${row.packLabel}`
             : ""}
         </span>
       ),
     },
-    {
-      key: "size",
-      header: "Size",
-      render: (row) => <span className="text-slate-600">{formatSize(row)}</span>,
-    },
+    ...(products.some((p) => p.volume != null && p.baseUnit !== "KG")
+      ? [
+          {
+            key: "size",
+            header: "Size",
+            render: (row: Product) => (
+              <span className="text-slate-600">
+                {row.baseUnit === "KG" ? "—" : formatSize(row)}
+              </span>
+            ),
+          } satisfies Column<Product>,
+        ]
+      : []),
     {
       key: "defaultSellingPrice",
       header: "Price / unit",
@@ -121,11 +133,15 @@ export function ProductsTable({ createOpen, onCreateClose }: ProductsTableProps)
       header: "Current Cost",
       render: (row) => formatMoney(row.currentCost),
     },
-    {
-      key: "isReturnable",
-      header: "Returnable",
-      render: (row) => (row.isReturnable ? "Yes" : "No"),
-    },
+    ...(containersEnabled
+      ? [
+          {
+            key: "isReturnable",
+            header: "Returnable",
+            render: (row: Product) => (row.isReturnable ? "Yes" : "No"),
+          } satisfies Column<Product>,
+        ]
+      : []),
     {
       key: "status",
       header: "Status",

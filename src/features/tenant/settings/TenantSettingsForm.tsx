@@ -42,6 +42,7 @@ import {
 import type { SettingsResponse } from "@/types/settings";
 import { DataExportSection } from "./DataExportSection";
 import { ServedAreasSection } from "./ServedAreasSection";
+import { SidebarNavSection } from "./SidebarNavSection";
 
 const LOGO_ACCEPT = new Set(["image/jpeg", "image/png", "image/webp"]);
 const LOGO_MAX_BYTES = 2 * 1024 * 1024;
@@ -465,6 +466,13 @@ export function TenantSettingsForm() {
           </div>
         </PermissionGuard>
       </div>
+
+      <PermissionGuard permission={PERMISSIONS.SETTINGS.UPDATE}>
+        <SidebarNavSection
+          key={(settings.sidebarNav?.more ?? []).join(",")}
+          moreKeys={settings.sidebarNav?.more ?? []}
+        />
+      </PermissionGuard>
 
       <ServedAreasSection />
 

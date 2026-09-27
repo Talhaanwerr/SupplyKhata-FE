@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -48,6 +48,10 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function money(n: number) {
+  return n.toFixed(2);
+}
+
 interface CashHandoverFormModalProps {
   open: boolean;
   onClose: () => void;
@@ -77,6 +81,7 @@ export function CashHandoverFormModal({ open, onClose, handover }: CashHandoverF
     register,
     handleSubmit,
     reset,
+    control,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
@@ -91,6 +96,15 @@ export function CashHandoverFormModal({ open, onClose, handover }: CashHandoverF
       deliveryRunId: "",
     },
   });
+
+  const selectedRiderId = useWatch({ control, name: "riderId" });
+
+  const balanceQuery = useQuery({
+    queryKey: [RIDER_CASH_BALANCE_QUERY_KEY, selectedRiderId],
+    queryFn: () => cashHandoversApi.riderCashBalance(selectedRiderId),
+    enabled: open && !!selectedRiderId,
+  });
+  const balance = balanceQuery.data?.data;
 
   useEffect(() => {
     if (!open) return;
@@ -173,6 +187,32 @@ export function CashHandoverFormModal({ open, onClose, handover }: CashHandoverF
               ))}
             </Select>
           </FormField>
+
+          {selectedRiderId && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+              {balanceQuery.isLoading ? (
+                <p className="flex items-center gap-2 text-slate-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading rider balance…
+                </p>
+              ) : balanceQuery.isError ? (
+                <p className="text-red-600">Could not load rider balance</p>
+              ) : balance ? (
+                <div className="space-y-1">
+                  <p className="font-medium text-slate-900">
+                    Cash with rider:{" "}
+                    <span className="text-emerald-700 tabular-nums">
+                      {money(balance.currentBalance)}
+                    </span>
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Collected {money(balance.cashCollected)} − expenses{" "}
+                    {money(balance.riderPaidExpenses)} − handed over {money(balance.cashHandedOver)}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          )}
 
           <FormField label="Received by" error={errors.receivedById?.message} required>
             <Select {...register("receivedById")}>

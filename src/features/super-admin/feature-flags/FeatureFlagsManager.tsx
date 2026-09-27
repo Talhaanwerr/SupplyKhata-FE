@@ -143,7 +143,7 @@ export function FeatureFlagsManager() {
                     <StatusBadge status={enabled ? "active" : "inactive"} />
                     {flag.isGlobal && (
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
-                        Always on
+                        Default on
                       </span>
                     )}
                   </div>
@@ -155,14 +155,8 @@ export function FeatureFlagsManager() {
 
                 <button
                   type="button"
-                  disabled={busy || flag.isGlobal}
-                  title={
-                    flag.isGlobal
-                      ? "Global features are always on for every tenant"
-                      : enabled
-                        ? "Disable for this tenant"
-                        : "Enable for this tenant"
-                  }
+                  disabled={busy}
+                  title={enabled ? "Disable for this tenant" : "Enable for this tenant"}
                   aria-label={enabled ? `Disable ${flag.name}` : `Enable ${flag.name}`}
                   className="hover:text-primary ml-4 shrink-0 text-slate-400 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                   onClick={() => toggle.mutate({ slug: flag.slug, enable: !enabled })}

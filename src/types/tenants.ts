@@ -30,6 +30,16 @@ export interface TenantSubscription {
   };
 }
 
+export interface TenantFeatureFlagSummary {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  isGlobal: boolean;
+  tenantEnabled: boolean | null;
+  effectivelyEnabled: boolean;
+}
+
 /** Returned by GET /tenants/:id */
 export interface TenantDetail extends TenantListItem {
   subscriptions: TenantSubscription[];
@@ -45,10 +55,12 @@ export interface TenantDetail extends TenantListItem {
     email: string;
     firstName: string;
     lastName: string;
+    phone: string | null;
     memberStatus: string;
     emailVerified: boolean;
     emailVerifiedAt?: string | null;
   } | null;
+  featureFlags: TenantFeatureFlagSummary[];
 }
 
 /** POST /tenants */
@@ -60,10 +72,12 @@ export interface CreateTenantPayload {
   ownerEmail: string;
   ownerFirstName: string;
   ownerLastName: string;
+  ownerPhone?: string;
   ownerUserId?: string;
   timezone?: string;
   currency?: string;
   logo?: string;
+  featureFlags?: Array<{ slug: string; enabled: boolean }>;
 }
 
 /** Returned by POST /tenants (includes invited owner summary) */
@@ -73,6 +87,7 @@ export interface CreateTenantResult extends TenantListItem {
     email: string;
     firstName: string;
     lastName: string;
+    phone: string | null;
   };
 }
 

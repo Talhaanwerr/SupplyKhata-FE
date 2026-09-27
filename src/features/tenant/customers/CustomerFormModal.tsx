@@ -117,6 +117,8 @@ interface CustomerFormModalProps {
   open: boolean;
   onClose: () => void;
   customer?: CustomerDetail | null;
+  /** Called after a successful create (not edit) with the new customer. */
+  onCreated?: (customer: CustomerDetail) => void;
 }
 
 const PAYMENT_OPTIONS: { value: PaymentCycle; label: string }[] = [
@@ -158,7 +160,7 @@ function validateProductPrices(
   return { ok: true, prices };
 }
 
-export function CustomerFormModal({ open, onClose, customer }: CustomerFormModalProps) {
+export function CustomerFormModal({ open, onClose, customer, onCreated }: CustomerFormModalProps) {
   const isEdit = !!customer;
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -317,7 +319,7 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
       return customersApi.create(payload);
     },
     {
-      onSuccess: () => {
+      onSuccess: (res) => {
         qc.invalidateQueries({ queryKey: [CUSTOMERS_QUERY_KEY] });
         qc.invalidateQueries({ queryKey: [AREAS_QUERY_KEY] });
         qc.invalidateQueries({ queryKey: [CONTAINER_INVENTORY_QUERY_KEY] });
@@ -328,6 +330,9 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
           title: isEdit ? "Customer updated" : "Customer created",
           variant: "success",
         });
+        if (!isEdit && res.data) {
+          onCreated?.(res.data);
+        }
         onClose();
       },
       onError: (err) => {
@@ -382,7 +387,7 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="z-[70] max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Customer" : "Add Customer"}</DialogTitle>
           <DialogDescription>
@@ -441,7 +446,15 @@ export function CustomerFormModal({ open, onClose, customer }: CustomerFormModal
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="Status" error={errors.status?.message}>
+            <FormField
+              label="Status"
+              error={errors.status?.message}
+              description={
+                isEdit
+                  ? "Deactivate only when balance is 0 and no containers are with the customer."
+                  : undefined
+              }
+            >
               <Select {...register("status")}>
                 <option value="ACTIVE">Active</option>
                 <option value="INACTIVE">Inactive</option>

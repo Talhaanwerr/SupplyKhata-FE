@@ -1,19 +1,23 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, ToggleLeft, ToggleRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api-error";
 import { tenantsApi } from "@/lib/tenants-api";
-import { TENANTS_QUERY_KEY } from "@/constants/query-keys";
+import { featureFlagsApi } from "@/lib/feature-flags-api";
+import { FEATURE_FLAGS_QUERY_KEY, TENANTS_QUERY_KEY } from "@/constants/query-keys";
+import type { FeatureFlagItem } from "@/types/feature-flags";
 
 const schema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -27,6 +31,7 @@ const schema = z.object({
   ownerFirstName: z.string().min(1, "Owner first name is required"),
   ownerLastName: z.string().min(1, "Owner last name is required"),
   ownerEmail: z.string().email("Enter a valid owner email"),
+  ownerPhone: z.string().max(30).optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -35,6 +40,19 @@ export function CreateTenantForm() {
   const router = useRouter();
   const qc = useQueryClient();
   const { toast } = useToast();
+  /** User overrides only — unset slugs fall back to flag.isGlobal */
+  const [flagOverrides, setFlagOverrides] = useState<Record<string, boolean>>({});
+
+  const { data: flagsRes, isLoading: flagsLoading } = useQuery({
+    queryKey: [FEATURE_FLAGS_QUERY_KEY, "catalog"],
+    queryFn: () => featureFlagsApi.list(),
+  });
+
+  const catalog = ((flagsRes?.data ?? []) as FeatureFlagItem[]).filter((f) => f.isActive !== false);
+
+  function isFlagEnabled(flag: FeatureFlagItem) {
+    return flagOverrides[flag.slug] ?? flag.isGlobal;
+  }
 
   const {
     register,
@@ -43,11 +61,16 @@ export function CreateTenantForm() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { currency: "PKR" },
+    defaultValues: { currency: "PKR", ownerPhone: "" },
   });
 
   async function onSubmit(data: FormValues) {
     try {
+      const featureFlags = catalog.map((f) => ({
+        slug: f.slug,
+        enabled: isFlagEnabled(f),
+      }));
+
       const res = await tenantsApi.create({
         name: data.name,
         slug: data.slug,
@@ -58,6 +81,8 @@ export function CreateTenantForm() {
         ownerEmail: data.ownerEmail.trim().toLowerCase(),
         ownerFirstName: data.ownerFirstName.trim(),
         ownerLastName: data.ownerLastName.trim(),
+        ownerPhone: data.ownerPhone?.trim() || undefined,
+        featureFlags,
       });
       qc.invalidateQueries({ queryKey: [TENANTS_QUERY_KEY] });
       const ownerEmail = res.data?.owner?.email ?? data.ownerEmail;
@@ -77,7 +102,7 @@ export function CreateTenantForm() {
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6">
-      <form onSubmit={handleSubmit(onSubmit)} className="max-w-lg space-y-5">
+      <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl space-y-5">
         {errors.root && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
             {errors.root.message}
@@ -142,11 +167,80 @@ export function CreateTenantForm() {
                 {...register("ownerEmail")}
               />
             </FormField>
+            <FormField label="Owner Phone" error={errors.ownerPhone?.message}>
+              <Input
+                type="tel"
+                placeholder="+923001234567 (optional)"
+                autoComplete="off"
+                {...register("ownerPhone")}
+              />
+            </FormField>
           </div>
         </div>
 
+        <div className="border-t border-slate-100 pt-5">
+          <h3 className="mb-1 text-sm font-semibold text-slate-900">Feature flags</h3>
+          <p className="mb-3 text-xs text-slate-500">
+            Choose which product features this workspace can use. Defaults match platform defaults
+            (e.g. returnable containers and pack helpers start on). Turn off for rice-only tenants.
+          </p>
+          {flagsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading features…
+            </div>
+          ) : catalog.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No feature flags in catalog. Run database seed to add product flags.
+            </p>
+          ) : (
+            <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+              {catalog.map((flag) => {
+                const enabled = isFlagEnabled(flag);
+                return (
+                  <div
+                    key={flag.slug}
+                    className="flex items-center justify-between gap-4 px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium text-slate-900">{flag.name}</p>
+                        <StatusBadge status={enabled ? "active" : "inactive"} />
+                        {flag.isGlobal && (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
+                            Default on
+                          </span>
+                        )}
+                      </div>
+                      {flag.description && (
+                        <p className="mt-0.5 text-xs text-slate-500">{flag.description}</p>
+                      )}
+                      <code className="text-[11px] text-slate-400">{flag.slug}</code>
+                    </div>
+                    <button
+                      type="button"
+                      title={enabled ? "Disable for this tenant" : "Enable for this tenant"}
+                      aria-label={enabled ? `Disable ${flag.name}` : `Enable ${flag.name}`}
+                      className="hover:text-primary shrink-0 text-slate-400 transition-colors"
+                      onClick={() =>
+                        setFlagOverrides((prev) => ({ ...prev, [flag.slug]: !enabled }))
+                      }
+                    >
+                      {enabled ? (
+                        <ToggleRight className="text-primary h-8 w-8" />
+                      ) : (
+                        <ToggleLeft className="h-8 w-8" />
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isSubmitting}>
+          <Button type="submit" disabled={isSubmitting || flagsLoading}>
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
             Create &amp; Invite Owner
           </Button>

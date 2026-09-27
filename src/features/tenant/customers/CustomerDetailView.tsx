@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Pencil, UserCheck, UserX } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -29,12 +29,11 @@ type Tab = "pricing" | "ledger" | "containers" | "schedule";
 export function CustomerDetailView() {
   const params = useParams<{ id: string }>();
   const customerId = params.id;
-  const router = useRouter();
   const [tab, setTab] = useState<Tab>("pricing");
   const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
   const activeTab: Tab = tab === "containers" && !containersEnabled ? "pricing" : tab;
   const [editOpen, setEditOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [toggleOpen, setToggleOpen] = useState(false);
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -49,22 +48,32 @@ export function CustomerDetailView() {
   });
 
   const customer = res?.data;
+  const isActive = customer?.status === "ACTIVE";
 
-  const remove = useApiMutation(() => customersApi.remove(customerId), {
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [CUSTOMERS_QUERY_KEY] });
-      toast({ title: "Customer deleted", variant: "success" });
-      router.push("/customers");
-    },
-    onError: (err) => {
-      toast({
-        title: "Could not delete customer",
-        description: getSafeErrorMessage(err),
-        variant: "error",
-      });
-      setDeleteOpen(false);
-    },
-  });
+  const toggleStatus = useApiMutation(
+    () =>
+      customersApi.update(customerId, {
+        status: isActive ? "INACTIVE" : "ACTIVE",
+      }),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: [CUSTOMERS_QUERY_KEY] });
+        qc.invalidateQueries({ queryKey: [CUSTOMER_DETAIL_QUERY_KEY, customerId] });
+        setToggleOpen(false);
+        toast({
+          title: isActive ? "Customer deactivated" : "Customer activated",
+          variant: "success",
+        });
+      },
+      onError: (err) => {
+        toast({
+          title: isActive ? "Could not deactivate" : "Could not activate",
+          description: getSafeErrorMessage(err),
+          variant: "error",
+        });
+      },
+    }
+  );
 
   if (isLoading) {
     return <div className="text-sm text-slate-500">Loading customer…</div>;
@@ -101,11 +110,18 @@ export function CustomerDetailView() {
                   <Pencil className="h-4 w-4" />
                   Edit
                 </Button>
-              </PermissionGuard>
-              <PermissionGuard permission={PERMISSIONS.CUSTOMERS.DELETE}>
-                <Button variant="outline" onClick={() => setDeleteOpen(true)}>
-                  <Trash2 className="h-4 w-4 text-red-600" />
-                  Delete
+                <Button variant="outline" onClick={() => setToggleOpen(true)}>
+                  {isActive ? (
+                    <>
+                      <UserX className="h-4 w-4 text-amber-600" />
+                      Deactivate
+                    </>
+                  ) : (
+                    <>
+                      <UserCheck className="h-4 w-4 text-green-600" />
+                      Activate
+                    </>
+                  )}
                 </Button>
               </PermissionGuard>
             </div>
@@ -220,14 +236,17 @@ export function CustomerDetailView() {
       />
 
       <ConfirmDialog
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        onConfirm={() => remove.mutate()}
-        title="Delete Customer"
-        description={`Delete "${customer.name}"? This cannot be undone from the list.`}
-        confirmLabel="Delete"
-        variant="destructive"
-        isLoading={remove.isPending}
+        open={toggleOpen}
+        onClose={() => setToggleOpen(false)}
+        onConfirm={() => toggleStatus.mutate()}
+        title={isActive ? "Deactivate Customer" : "Activate Customer"}
+        description={
+          isActive
+            ? `Deactivate "${customer.name}"? Only allowed when balance is 0 and no containers are with the customer.`
+            : `Activate "${customer.name}" again?`
+        }
+        confirmLabel={isActive ? "Deactivate" : "Activate"}
+        isLoading={toggleStatus.isPending}
       />
     </div>
   );

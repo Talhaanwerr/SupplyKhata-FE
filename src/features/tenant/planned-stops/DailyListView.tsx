@@ -23,7 +23,6 @@ import { FormField } from "@/components/ui/form-field";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { plannedStopsApi } from "@/lib/planned-stops-api";
-import { customersApi } from "@/lib/customers-api";
 import { areasApi } from "@/lib/areas-api";
 import { staffApi } from "@/lib/staff-api";
 import { productsApi } from "@/lib/products-api";
@@ -32,7 +31,6 @@ import { QTY_RE } from "@/lib/form-number";
 import { PERMISSIONS } from "@/constants/permissions";
 import {
   AREAS_QUERY_KEY,
-  CUSTOMERS_QUERY_KEY,
   PLANNED_STOPS_QUERY_KEY,
   PRODUCTS_QUERY_KEY,
   STAFF_RIDERS_QUERY_KEY,
@@ -42,6 +40,7 @@ import type { Product } from "@/types/products";
 import { baseUnitLabel } from "@/types/products";
 import { canAccessAny } from "@/lib/can-access";
 import { useAuthStore } from "@/store/auth-store";
+import { CustomerSearchSelect } from "@/features/tenant/customers/CustomerSearchSelect";
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -58,7 +57,6 @@ const STATUSES: { id: PlannedStopStatus | ""; label: string }[] = [
 ];
 
 const EMPTY_PRODUCTS: Product[] = [];
-const EMPTY_CUSTOMERS: { id: string; name: string }[] = [];
 
 interface EditStopState {
   stop: PlannedStop;
@@ -116,11 +114,6 @@ export function DailyListView() {
     queryKey: [PRODUCTS_QUERY_KEY, "daily-list"],
     queryFn: () => productsApi.list({ isActive: true }),
   });
-  const customersQuery = useQuery({
-    queryKey: [CUSTOMERS_QUERY_KEY, "daily-list"],
-    queryFn: () => customersApi.list({ status: "ACTIVE", limit: 200 }),
-    enabled: addOpen,
-  });
 
   const listQuery = useQuery({
     queryKey: [PLANNED_STOPS_QUERY_KEY, "list", date, status, areaId, riderId, search],
@@ -136,7 +129,6 @@ export function DailyListView() {
 
   const areas = useMemo(() => areasQuery.data?.data ?? [], [areasQuery.data?.data]);
   const products: Product[] = productsQuery.data?.data ?? EMPTY_PRODUCTS;
-  const customers = customersQuery.data?.data?.items ?? EMPTY_CUSTOMERS;
   const items = listQuery.data?.data?.items ?? [];
 
   function invalidate() {
@@ -525,17 +517,11 @@ export function DailyListView() {
           </DialogHeader>
           <div className="space-y-4">
             <FormField label="Customer" required>
-              <Select
+              <CustomerSearchSelect
                 value={addState.customerId}
-                onChange={(e) => setAddState((prev) => ({ ...prev, customerId: e.target.value }))}
-              >
-                <option value="">Select customer</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+                onChange={(customerId) => setAddState((prev) => ({ ...prev, customerId }))}
+                placeholder="Search customer by name or phone…"
+              />
             </FormField>
             <FormField label="Plan date" required>
               <Input

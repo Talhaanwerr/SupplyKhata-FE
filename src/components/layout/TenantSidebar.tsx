@@ -1,152 +1,21 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  Users,
-  ShieldCheck,
-  ScrollText,
-  LogOut,
-  X,
-  BarChart3,
-  Package,
-  Contact,
-  Truck,
-  Bike,
-  ClipboardList,
-  Wallet,
-  Droplets,
-  Receipt,
-  HandCoins,
-  Boxes,
-  Banknote,
-  CalendarDays,
-} from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ChevronDown, LogOut, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { canAccessAny } from "@/lib/can-access";
-import { PERMISSIONS } from "@/constants/permissions";
 import { useSidebar } from "./sidebar-context";
 import { TenantSwitcher } from "./TenantSwitcher";
 import { useAuthStore } from "@/store/auth-store";
 import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
-
-interface NavItem {
-  href: string;
-  labelKey: string;
-  icon: React.ElementType;
-  /** Any of these permissions grants visibility. Undefined = any authenticated tenant user. */
-  permissions?: string[];
-  /** When set, nav item is hidden unless this feature flag is effectively enabled. */
-  featureFlag?: string;
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
-  {
-    href: "/products",
-    labelKey: "products",
-    icon: Package,
-    permissions: [PERMISSIONS.PRODUCTS.READ, PERMISSIONS.PRODUCTS.MANAGE],
-  },
-  {
-    href: "/customers",
-    labelKey: "customers",
-    icon: Contact,
-    permissions: [PERMISSIONS.CUSTOMERS.READ, PERMISSIONS.CUSTOMERS.MANAGE],
-  },
-  {
-    href: "/vehicles",
-    labelKey: "vehicles",
-    icon: Truck,
-    permissions: [PERMISSIONS.VEHICLES.READ, PERMISSIONS.VEHICLES.MANAGE],
-  },
-  {
-    href: "/delivery-runs",
-    labelKey: "deliveryRuns",
-    icon: ClipboardList,
-    permissions: [PERMISSIONS.DELIVERY_RUNS.READ, PERMISSIONS.DELIVERY_RUNS.MANAGE],
-  },
-  {
-    href: "/refill-batches",
-    labelKey: "refillBatches",
-    icon: Droplets,
-    permissions: [PERMISSIONS.REFILL.READ, PERMISSIONS.REFILL.MANAGE],
-  },
-  {
-    href: "/expenses",
-    labelKey: "expenses",
-    icon: Receipt,
-    permissions: [
-      PERMISSIONS.EXPENSES.READ,
-      PERMISSIONS.EXPENSES.MANAGE,
-      PERMISSIONS.EXPENSES.CREATE,
-    ],
-  },
-  {
-    href: "/cash-handovers",
-    labelKey: "cashHandovers",
-    icon: HandCoins,
-    permissions: [PERMISSIONS.HANDOVERS.READ, PERMISSIONS.HANDOVERS.MANAGE],
-  },
-  {
-    href: "/container-inventory",
-    labelKey: "containerInventory",
-    icon: Boxes,
-    permissions: [PERMISSIONS.CONTAINERS.READ, PERMISSIONS.CONTAINERS.MANAGE],
-    featureFlag: FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS,
-  },
-  {
-    href: "/payments",
-    labelKey: "payments",
-    icon: Wallet,
-    permissions: [PERMISSIONS.PAYMENTS.READ, PERMISSIONS.PAYMENTS.MANAGE],
-  },
-  {
-    href: "/planned-stops",
-    labelKey: "plannedStops",
-    icon: CalendarDays,
-    permissions: [PERMISSIONS.PLANNED_STOPS.READ, PERMISSIONS.PLANNED_STOPS.MANAGE],
-  },
-  {
-    href: "/collections",
-    labelKey: "collections",
-    icon: Banknote,
-    permissions: [PERMISSIONS.COLLECTIONS.READ, PERMISSIONS.COLLECTIONS.MANAGE],
-  },
-  {
-    href: "/riders",
-    labelKey: "riders",
-    icon: Bike,
-    permissions: [PERMISSIONS.USERS.READ, PERMISSIONS.USERS.MANAGE],
-  },
-  {
-    href: "/users",
-    labelKey: "users",
-    icon: Users,
-    permissions: [PERMISSIONS.USERS.READ, PERMISSIONS.USERS.MANAGE],
-  },
-  {
-    href: "/roles",
-    labelKey: "roles",
-    icon: ShieldCheck,
-    permissions: [PERMISSIONS.ROLES.READ, PERMISSIONS.ROLES.MANAGE],
-  },
-  {
-    href: "/reports",
-    labelKey: "reports",
-    icon: BarChart3,
-    permissions: [PERMISSIONS.REPORTS.READ, PERMISSIONS.REPORTS.MANAGE],
-  },
-  {
-    href: "/activity-logs",
-    labelKey: "activityLogs",
-    icon: ScrollText,
-    permissions: [PERMISSIONS.AUDIT_LOGS.READ, PERMISSIONS.AUDIT_LOGS.MANAGE],
-  },
-];
+import { settingsApi } from "@/lib/settings-api";
+import { SIDEBAR_NAV_QUERY_KEY } from "@/constants/query-keys";
+import { splitNavByPlacement, TENANT_NAV_ITEMS, type TenantNavItem } from "@/constants/tenant-nav";
 
 function SidebarContent({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname();
@@ -155,21 +24,64 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
   const { enabled: returnableContainersEnabled } = useFeatureFlag(
     FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS
   );
+  const { enabled: plantFillEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PLANT_FILL);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const sidebarNavQuery = useQuery({
+    queryKey: [SIDEBAR_NAV_QUERY_KEY],
+    queryFn: settingsApi.getSidebarNav,
+  });
 
   const flagEnabled = (slug?: string) => {
     if (!slug) return true;
     if (slug === FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS) return returnableContainersEnabled;
+    if (slug === FEATURE_FLAG_SLUGS.PLANT_FILL) return plantFillEnabled;
     return true;
   };
 
-  const visibleItems = NAV_ITEMS.filter(
-    (item) =>
-      (!item.permissions || canAccessAny(user, item.permissions)) && flagEnabled(item.featureFlag)
+  const visibleItems = useMemo(
+    () =>
+      TENANT_NAV_ITEMS.filter(
+        (item) =>
+          (!item.permissions || canAccessAny(user, item.permissions)) &&
+          flagEnabled(item.featureFlag)
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- flags from hooks above
+    [user, returnableContainersEnabled, plantFillEnabled]
   );
+
+  const { primary, more } = useMemo(
+    () => splitNavByPlacement(visibleItems, sidebarNavQuery.data?.data?.more),
+    [visibleItems, sidebarNavQuery.data?.data?.more]
+  );
+
+  const moreActive = more.some(
+    (item) => pathname === item.href || pathname.startsWith(item.href + "/")
+  );
+  const showMoreExpanded = moreOpen || moreActive;
+
+  function NavLink({ item }: { item: TenantNavItem }) {
+    const Icon = item.icon;
+    const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+    return (
+      <Link
+        href={item.href}
+        onClick={onClose}
+        className={cn(
+          "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+          isActive
+            ? "bg-primary/10 text-primary"
+            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        )}
+      >
+        <Icon className={cn("h-4 w-4 shrink-0", isActive && "text-primary")} />
+        {t(item.labelKey as Parameters<typeof t>[0])}
+      </Link>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col">
-      {/* Workspace switcher */}
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-3">
         <div className="min-w-0 flex-1">
           <TenantSwitcher />
@@ -185,30 +97,44 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
         )}
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-        {visibleItems.map(({ href, labelKey, icon: Icon }) => {
-          const isActive = pathname === href || pathname.startsWith(href + "/");
-          return (
-            <Link
-              key={href}
-              href={href}
-              onClick={onClose}
+        {primary.map((item) => (
+          <NavLink key={item.key} item={item} />
+        ))}
+
+        {more.length > 0 && (
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setMoreOpen((v) => !v)}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                isActive
+                "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                moreActive
                   ? "bg-primary/10 text-primary"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               )}
+              aria-expanded={showMoreExpanded}
             >
-              <Icon className={cn("h-4 w-4 shrink-0", isActive && "text-primary")} />
-              {t(labelKey as Parameters<typeof t>[0])}
-            </Link>
-          );
-        })}
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 shrink-0 transition-transform",
+                  showMoreExpanded ? "rotate-0" : "-rotate-90",
+                  moreActive && "text-primary"
+                )}
+              />
+              {t("more")}
+            </button>
+            {showMoreExpanded && (
+              <div className="mt-0.5 ml-4 space-y-0.5 border-l border-slate-200 pl-2">
+                {more.map((item) => (
+                  <NavLink key={item.key} item={item} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </nav>
 
-      {/* Footer */}
       <div className="border-t border-slate-200 p-3">
         <button
           onClick={() => logout()}
@@ -227,12 +153,10 @@ export function TenantSidebar() {
 
   return (
     <>
-      {/* Desktop sidebar */}
       <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white md:flex md:flex-col">
         <SidebarContent />
       </aside>
 
-      {/* Mobile backdrop */}
       {isOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/30 md:hidden"
@@ -241,7 +165,6 @@ export function TenantSidebar() {
         />
       )}
 
-      {/* Mobile drawer */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 w-72 border-r border-slate-200 bg-white shadow-xl transition-transform duration-300 md:hidden",

@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2, User, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { useToast } from "@/components/ui/toast";
@@ -272,8 +273,7 @@ export function SuperAdminProfileForm() {
             error={passwordForm.formState.errors.currentPassword?.message}
             required
           >
-            <Input
-              type="password"
+            <PasswordInput
               autoComplete="current-password"
               {...passwordForm.register("currentPassword")}
             />
@@ -283,19 +283,14 @@ export function SuperAdminProfileForm() {
             error={passwordForm.formState.errors.newPassword?.message}
             required
           >
-            <Input
-              type="password"
-              autoComplete="new-password"
-              {...passwordForm.register("newPassword")}
-            />
+            <PasswordInput autoComplete="new-password" {...passwordForm.register("newPassword")} />
           </FormField>
           <FormField
             label="Confirm New Password"
             error={passwordForm.formState.errors.confirmPassword?.message}
             required
           >
-            <Input
-              type="password"
+            <PasswordInput
               autoComplete="new-password"
               {...passwordForm.register("confirmPassword")}
             />

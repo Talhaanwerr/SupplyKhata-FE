@@ -41,6 +41,8 @@ export interface FeatureAccessResult {
 /** Seeded product flags — keep in sync with BE prisma/seed STARTER_FEATURE_FLAGS */
 export const FEATURE_FLAG_SLUGS = {
   RETURNABLE_CONTAINERS: "returnable-containers",
+  PACK_HELPERS: "pack-helpers",
+  PLANT_FILL: "plant-fill",
 } as const;
 
 export type FeatureFlagsListResponse = ApiEnvelope<(FeatureFlagItem | TenantFeatureFlagItem)[]>;

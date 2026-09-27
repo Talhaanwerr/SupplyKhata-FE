@@ -31,7 +31,7 @@ import {
 } from "@/constants/query-keys";
 import { INT_RE, MONEY_RE, QTY_RE } from "@/lib/form-number";
 import type { Product } from "@/types/products";
-import { baseUnitLabel } from "@/types/products";
+import { baseUnitLabel, needsExplicitPackagingCount } from "@/types/products";
 import type { RefillBatch } from "@/types/refill-batches";
 import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 import type { Vehicle } from "@/types/vehicles";
@@ -44,6 +44,7 @@ const EMPTY_VEHICLES: Vehicle[] = [];
 const stockSchema = z.object({
   productId: z.string().min(1),
   filledCount: z.string().regex(QTY_RE, "Units must be a non-negative number (max 3 decimals)"),
+  filledPackagingCount: z.string().regex(INT_RE, "Cans must be a whole number").optional(),
   emptyCount: z.string().regex(INT_RE, "Empty cans must be a whole number"),
   refillBatchId: z.string().optional(),
 });
@@ -71,6 +72,7 @@ export function OpenDeliveryRunForm() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
+  const { enabled: plantFillEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PLANT_FILL);
   const [loadFromBatchState, setLoadFromBatchState] = useState<{
     productIdsKey: string;
     flags: Record<number, boolean>;
@@ -123,7 +125,7 @@ export function OpenDeliveryRunForm() {
     queries: products.map((product) => ({
       queryKey: [REFILL_AVAILABLE_QUERY_KEY, product.id],
       queryFn: () => refillBatchesApi.available(product.id),
-      enabled: products.length > 0,
+      enabled: plantFillEnabled && products.length > 0,
     })),
   });
 
@@ -142,6 +144,7 @@ export function OpenDeliveryRunForm() {
       openingStock: products.map((product) => ({
         productId: product.id,
         filledCount: "0",
+        filledPackagingCount: "0",
         emptyCount: "0",
         refillBatchId: "",
       })),
@@ -179,13 +182,15 @@ export function OpenDeliveryRunForm() {
 
   const save = useApiMutation(
     (values: FormValues) => {
-      const refillLoads = values.openingStock
-        .filter((stock) => stock.refillBatchId && Number(stock.filledCount) > 0)
-        .map((stock) => ({
-          refillBatchId: stock.refillBatchId as string,
-          productId: stock.productId,
-          quantityLoaded: Number(stock.filledCount),
-        }));
+      const refillLoads = plantFillEnabled
+        ? values.openingStock
+            .filter((stock) => stock.refillBatchId && Number(stock.filledCount) > 0)
+            .map((stock) => ({
+              refillBatchId: stock.refillBatchId as string,
+              productId: stock.productId,
+              quantityLoaded: Number(stock.filledCount),
+            }))
+        : [];
 
       return deliveryRunsApi.create({
         riderId: values.riderId,
@@ -196,9 +201,14 @@ export function OpenDeliveryRunForm() {
         openingStock: values.openingStock.map((stock) => {
           const product = products.find((p) => p.id === stock.productId);
           const allowEmpty = containersEnabled && (product?.isReturnable ?? false);
+          const needsCans = allowEmpty && product ? needsExplicitPackagingCount(product) : false;
+          const filled = Number(stock.filledCount);
           return {
             productId: stock.productId,
-            filledCount: Number(stock.filledCount),
+            filledCount: filled,
+            ...(needsCans && filled > 0
+              ? { filledPackagingCount: Number(stock.filledPackagingCount || "0") }
+              : {}),
             emptyCount: allowEmpty ? Number(stock.emptyCount) : 0,
           };
         }),
@@ -283,28 +293,30 @@ export function OpenDeliveryRunForm() {
                     <input type="hidden" {...register(`openingStock.${index}.productId`)} />
                     <p className="mb-3 font-medium text-slate-900">{product.name}</p>
 
-                    <label className="mb-3 flex items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={useBatch}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setLoadFromBatchState({
-                            productIdsKey,
-                            flags: { ...loadFromBatch, [index]: checked },
-                          });
-                          if (!checked) {
-                            setValue(`openingStock.${index}.refillBatchId`, "", {
-                              shouldValidate: true,
+                    {plantFillEnabled && (
+                      <label className="mb-3 flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={useBatch}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setLoadFromBatchState({
+                              productIdsKey,
+                              flags: { ...loadFromBatch, [index]: checked },
                             });
-                          }
-                          clearErrors("root");
-                        }}
-                      />
-                      Load from refill batch
-                    </label>
+                            if (!checked) {
+                              setValue(`openingStock.${index}.refillBatchId`, "", {
+                                shouldValidate: true,
+                              });
+                            }
+                            clearErrors("root");
+                          }}
+                        />
+                        Load from refill batch
+                      </label>
+                    )}
 
-                    {useBatch && (
+                    {plantFillEnabled && useBatch && (
                       <FormField label="Refill batch" className="mb-3">
                         <Select
                           value={openingStock[index]?.refillBatchId ?? ""}
@@ -328,7 +340,11 @@ export function OpenDeliveryRunForm() {
 
                     <div
                       className={`grid gap-3 ${
-                        containersEnabled && product.isReturnable ? "sm:grid-cols-2" : ""
+                        containersEnabled && product.isReturnable
+                          ? needsExplicitPackagingCount(product)
+                            ? "sm:grid-cols-3"
+                            : "sm:grid-cols-2"
+                          : ""
                       }`}
                     >
                       <FormField
@@ -346,6 +362,22 @@ export function OpenDeliveryRunForm() {
                           })}
                         />
                       </FormField>
+                      {containersEnabled &&
+                        product.isReturnable &&
+                        needsExplicitPackagingCount(product) && (
+                          <FormField
+                            label="In how many cans?"
+                            error={errors.openingStock?.[index]?.filledPackagingCount?.message}
+                          >
+                            <Input
+                              inputMode="numeric"
+                              placeholder="e.g. 3"
+                              {...register(`openingStock.${index}.filledPackagingCount`, {
+                                onChange: () => clearErrors("root"),
+                              })}
+                            />
+                          </FormField>
+                        )}
                       {containersEnabled && product.isReturnable && (
                         <FormField
                           label="Empty cans"

@@ -8,7 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { resetPasswordSchema, type ResetPasswordInput } from "@/schemas/auth";
 import { authApi } from "@/lib/auth";
 import { ApiError } from "@/lib/api-error";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
@@ -99,8 +99,7 @@ function ResetPasswordForm() {
         )}
 
         <FormField label="New password" error={errors.password?.message} required>
-          <Input
-            type="password"
+          <PasswordInput
             placeholder="••••••••"
             autoComplete="new-password"
             aria-invalid={!!errors.password}
@@ -109,8 +108,7 @@ function ResetPasswordForm() {
         </FormField>
 
         <FormField label="Confirm password" error={errors.confirmPassword?.message} required>
-          <Input
-            type="password"
+          <PasswordInput
             placeholder="••••••••"
             autoComplete="new-password"
             aria-invalid={!!errors.confirmPassword}

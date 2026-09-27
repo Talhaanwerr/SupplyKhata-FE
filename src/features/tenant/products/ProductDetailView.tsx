@@ -14,6 +14,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PermissionGuard } from "@/components/ui/permission-guard";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
+import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { productsApi } from "@/lib/products-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
 import { PERMISSIONS } from "@/constants/permissions";
@@ -22,6 +23,7 @@ import {
   PRODUCT_DETAIL_QUERY_KEY,
   PRODUCTS_QUERY_KEY,
 } from "@/constants/query-keys";
+import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 import { ProductFormModal } from "./ProductFormModal";
 import { UpdateCostModal } from "./UpdateCostModal";
 import type { ProductCost } from "@/types/products";
@@ -41,6 +43,8 @@ export function ProductDetailView() {
   const router = useRouter();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
+  const { enabled: packHelpersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PACK_HELPERS);
   const [editOpen, setEditOpen] = useState(false);
   const [costOpen, setCostOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -156,19 +160,24 @@ export function ProductDetailView() {
           <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">Base unit</p>
           <p className="mt-1 text-sm font-semibold text-slate-900">
             {baseUnitLabel(product.baseUnit ?? "PCS")}
-            {product.hasPackHelper && product.unitsPerPack && product.packLabel
+            {packHelpersEnabled &&
+            product.hasPackHelper &&
+            product.unitsPerPack &&
+            product.packLabel
               ? ` · ${product.unitsPerPack}/${product.packLabel}`
               : ""}
           </p>
         </div>
-        <div>
-          <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">Size</p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {product.volume != null
-              ? `${product.volume}${product.unit ? ` ${product.unit}` : ""}`
-              : "—"}
-          </p>
-        </div>
+        {product.baseUnit !== "KG" && (
+          <div>
+            <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">Size</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">
+              {product.volume != null
+                ? `${product.volume}${product.unit ? ` ${product.unit}` : ""}`
+                : "—"}
+            </p>
+          </div>
+        )}
         <div>
           <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">
             Price / {baseUnitLabel(product.baseUnit ?? "PCS")}
@@ -187,15 +196,19 @@ export function ProductDetailView() {
           <p className="text-xs font-medium tracking-wide text-slate-400 uppercase">Status</p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <StatusBadge status={product.isActive ? "ACTIVE" : "INACTIVE"} />
-            <span className="text-xs text-slate-500">
-              {product.isReturnable ? "Returnable" : "Non-returnable"}
-            </span>
+            {containersEnabled && (
+              <span className="text-xs text-slate-500">
+                {product.isReturnable ? "Returnable" : "Non-returnable"}
+              </span>
+            )}
           </div>
         </div>
-        {(product.sku || product.containerType) && (
+        {(product.sku || (containersEnabled && product.containerType)) && (
           <div className="flex flex-wrap gap-4 text-sm text-slate-600 sm:col-span-2 lg:col-span-4">
             {product.sku && <span>SKU: {product.sku}</span>}
-            {product.containerType && <span>Container: {product.containerType}</span>}
+            {containersEnabled && product.containerType && (
+              <span>Container: {product.containerType}</span>
+            )}
           </div>
         )}
       </div>

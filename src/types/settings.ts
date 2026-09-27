@@ -13,6 +13,8 @@ export interface TenantSettings {
   invoicePrefix: string;
   themeColor: string;
   allowedDomains: string[];
+  /** Empty more = all sidebar tabs stay primary (no server defaults). */
+  sidebarNav?: { more: string[] };
   createdAt: string;
   updatedAt: string;
 }
@@ -28,6 +30,7 @@ export interface UpdateSettingsPayload {
   invoicePrefix?: string;
   themeColor?: string;
   allowedDomains?: string[];
+  sidebarNavMore?: string[];
 }
 
 export interface PlatformSettings {

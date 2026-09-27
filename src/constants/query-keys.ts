@@ -10,6 +10,7 @@ export const TENANTS_QUERY_KEY = "tenants" as const;
 export const TENANT_DETAIL_QUERY_KEY = "tenant-detail" as const;
 
 export const SETTINGS_QUERY_KEY = "settings" as const;
+export const SIDEBAR_NAV_QUERY_KEY = "sidebar-nav" as const;
 export const AREAS_QUERY_KEY = "areas" as const;
 export const PRODUCTS_QUERY_KEY = "products" as const;
 export const PRODUCT_DETAIL_QUERY_KEY = "product-detail" as const;

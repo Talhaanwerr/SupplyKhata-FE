@@ -10,6 +10,8 @@ import type {
 export const settingsApi = {
   get: () => apiClient.get<ApiEnvelope<TenantSettings>>("/settings"),
 
+  getSidebarNav: () => apiClient.get<ApiEnvelope<{ more: string[] }>>("/settings/sidebar-nav"),
+
   update: (payload: UpdateSettingsPayload) =>
     apiClient.patch<ApiEnvelope<TenantSettings>>("/settings", payload),
 

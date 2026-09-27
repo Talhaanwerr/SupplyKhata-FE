@@ -3,15 +3,32 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { Loader2, ShieldOff, ShieldCheck, XCircle, AlertCircle, Trash2, Mail } from "lucide-react";
+import {
+  Loader2,
+  ShieldOff,
+  ShieldCheck,
+  XCircle,
+  AlertCircle,
+  Trash2,
+  Mail,
+  ToggleLeft,
+  ToggleRight,
+} from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import { useApiMutation } from "@/hooks/use-api-mutation";
 import { tenantsApi } from "@/lib/tenants-api";
-import { TENANTS_QUERY_KEY, TENANT_DETAIL_QUERY_KEY } from "@/constants/query-keys";
+import { featureFlagsApi } from "@/lib/feature-flags-api";
+import {
+  FEATURE_FLAGS_QUERY_KEY,
+  TENANTS_QUERY_KEY,
+  TENANT_DETAIL_QUERY_KEY,
+} from "@/constants/query-keys";
 import { ApiError } from "@/lib/api-error";
+import { getSafeErrorMessage } from "@/lib/safe-error";
 
 interface TenantDetailViewProps {
   tenantId: string;
@@ -42,6 +59,30 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
   });
 
   const tenant = res?.data;
+
+  const toggleFlag = useApiMutation(
+    ({ slug, enable }: { slug: string; enable: boolean }) =>
+      enable
+        ? featureFlagsApi.adminEnable(tenantId, slug)
+        : featureFlagsApi.adminDisable(tenantId, slug),
+    {
+      onSuccess: (_, vars) => {
+        qc.invalidateQueries({ queryKey: [TENANT_DETAIL_QUERY_KEY, tenantId] });
+        qc.invalidateQueries({ queryKey: [FEATURE_FLAGS_QUERY_KEY, "admin-tenant", tenantId] });
+        toast({
+          title: vars.enable ? "Feature enabled" : "Feature disabled",
+          description: "Updated for this workspace.",
+          variant: "success",
+        });
+      },
+      onError: (err) =>
+        toast({
+          title: "Update failed",
+          description: getSafeErrorMessage(err),
+          variant: "error",
+        }),
+    }
+  );
 
   async function handleDelete() {
     setIsDeleting(true);
@@ -119,6 +160,7 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
   const canResendInvite = !!tenant.owner && tenant.status !== "CANCELLED";
   const ownerNeedsAccept =
     tenant.owner?.memberStatus === "INVITED" || tenant.owner?.emailVerified === false;
+  const featureFlags = tenant.featureFlags ?? [];
 
   const details = [
     { label: "Slug", value: tenant.slug },
@@ -138,7 +180,6 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
         </div>
       )}
 
-      {/* Info card */}
       <div className="rounded-xl border border-slate-200 bg-white p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-3">
@@ -183,7 +224,6 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
         </div>
       </div>
 
-      {/* Owner card */}
       {tenant.owner && (
         <div className="rounded-xl border border-slate-200 bg-white p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -193,6 +233,7 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
                 {tenant.owner.firstName} {tenant.owner.lastName}
               </p>
               <p className="text-sm text-slate-500">{tenant.owner.email}</p>
+              <p className="text-sm text-slate-500">Phone: {tenant.owner.phone ?? "—"}</p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <span
                   className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
@@ -244,7 +285,6 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
         </div>
       )}
 
-      {/* Details grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {details.map(({ label, value }) => (
           <div key={label} className="rounded-xl border border-slate-200 bg-white p-4">
@@ -254,7 +294,60 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
         ))}
       </div>
 
-      {/* Subscription table (if any) */}
+      <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <h3 className="mb-1 text-sm font-semibold text-slate-700">Feature flags</h3>
+        <p className="mb-4 text-xs text-slate-500">
+          Product features enabled for this workspace. Toggle to enable or disable.
+        </p>
+        {featureFlags.length === 0 ? (
+          <p className="text-sm text-slate-500">No active feature flags in catalog.</p>
+        ) : (
+          <div className="divide-y divide-slate-100 rounded-xl border border-slate-100">
+            {featureFlags.map((flag) => {
+              const enabled = flag.effectivelyEnabled;
+              const busy =
+                toggleFlag.isPending &&
+                (toggleFlag.variables as { slug: string } | undefined)?.slug === flag.slug;
+              return (
+                <div key={flag.slug} className="flex items-center justify-between gap-4 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-slate-900">{flag.name}</p>
+                      <StatusBadge status={enabled ? "active" : "inactive"} />
+                      {flag.isGlobal && (
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
+                          Default on
+                        </span>
+                      )}
+                    </div>
+                    {flag.description && (
+                      <p className="mt-0.5 text-xs text-slate-500">{flag.description}</p>
+                    )}
+                    <code className="text-[11px] text-slate-400">{flag.slug}</code>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    title={enabled ? "Disable for this tenant" : "Enable for this tenant"}
+                    aria-label={enabled ? `Disable ${flag.name}` : `Enable ${flag.name}`}
+                    className="hover:text-primary shrink-0 text-slate-400 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => toggleFlag.mutate({ slug: flag.slug, enable: !enabled })}
+                  >
+                    {busy ? (
+                      <Loader2 className="h-7 w-7 animate-spin" />
+                    ) : enabled ? (
+                      <ToggleRight className="text-primary h-8 w-8" />
+                    ) : (
+                      <ToggleLeft className="h-8 w-8" />
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {(tenant.subscriptions?.length ?? 0) > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white p-6">
           <h3 className="mb-4 text-sm font-semibold text-slate-700">Subscriptions</h3>
@@ -269,7 +362,6 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
         </div>
       )}
 
-      {/* Danger zone */}
       <div className="rounded-xl border border-red-200 bg-red-50 p-6">
         <h3 className="mb-1 text-sm font-semibold text-red-700">Danger Zone</h3>
         <p className="mb-4 text-sm text-red-600">
@@ -303,7 +395,6 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
         isLoading={isResending}
       />
 
-      {/* Confirm dialogs */}
       <ConfirmDialog
         open={dialog === "suspend"}
         onClose={() => setDialog(null)}
@@ -333,7 +424,7 @@ export function TenantDetailView({ tenantId }: TenantDetailViewProps) {
         variant="destructive"
         isLoading={isActing}
       />
-      {/* Delete confirmation dialog — type tenant name to confirm */}
+
       {deleteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl">

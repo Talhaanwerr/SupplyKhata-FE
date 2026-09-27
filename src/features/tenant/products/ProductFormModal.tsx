@@ -21,10 +21,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
+import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { productsApi } from "@/lib/products-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
 import { INT_RE, parseOptionalNumber, refineNonNegativeMoney } from "@/lib/form-number";
 import { PRODUCTS_QUERY_KEY, PRODUCT_DETAIL_QUERY_KEY } from "@/constants/query-keys";
+import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 import type { Product, ProductBaseUnit } from "@/types/products";
 
 const schema = z
@@ -79,14 +81,17 @@ interface ProductFormModalProps {
   product?: Product | null;
 }
 
+/** Fractional qty defaults on for litres only — kg sells in whole bags/kilos by default. */
 function defaultFractional(baseUnit: ProductBaseUnit) {
-  return baseUnit === "LTR" || baseUnit === "KG";
+  return baseUnit === "LTR";
 }
 
 export function ProductFormModal({ open, onClose, product }: ProductFormModalProps) {
   const isEdit = !!product;
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
+  const { enabled: packHelpersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PACK_HELPERS);
 
   const {
     register,
@@ -120,24 +125,29 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
   const allowFractionalQty = useWatch({ control, name: "allowFractionalQty" });
   const isReturnable = useWatch({ control, name: "isReturnable" });
   const isActive = useWatch({ control, name: "isActive" });
+  const isKg = baseUnit === "KG";
+  const showVolume = !isKg;
+  const showFractional = !isKg;
 
   useEffect(() => {
     if (!open) return;
     if (product) {
+      const unit = (product.baseUnit ?? "PCS") as ProductBaseUnit;
       reset({
         name: product.name,
-        baseUnit: product.baseUnit ?? "PCS",
-        volume: product.volume != null ? String(product.volume) : "",
+        baseUnit: unit,
+        volume: unit === "KG" ? "" : product.volume != null ? String(product.volume) : "",
         unit: product.unit ?? "pcs",
         sku: product.sku ?? "",
         defaultSellingPrice: String(product.defaultSellingPrice),
-        unitsPerPack: product.unitsPerPack != null ? String(product.unitsPerPack) : "",
-        packLabel: product.packLabel ?? "",
+        unitsPerPack:
+          packHelpersEnabled && product.unitsPerPack != null ? String(product.unitsPerPack) : "",
+        packLabel: packHelpersEnabled ? (product.packLabel ?? "") : "",
         containerCapacity:
           product.containerCapacity != null ? String(product.containerCapacity) : "",
-        allowFractionalQty: product.allowFractionalQty,
-        isReturnable: product.isReturnable,
-        containerType: product.containerType ?? "",
+        allowFractionalQty: unit === "KG" ? false : product.allowFractionalQty,
+        isReturnable: containersEnabled ? product.isReturnable : false,
+        containerType: containersEnabled ? (product.containerType ?? "") : "",
         isActive: product.isActive,
         initialCostPerUnit: "",
       });
@@ -153,33 +163,36 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
         packLabel: "",
         containerCapacity: "",
         allowFractionalQty: false,
-        isReturnable: true,
+        isReturnable: containersEnabled,
         containerType: "",
         isActive: true,
         initialCostPerUnit: "",
       });
     }
-  }, [open, product, reset]);
+  }, [open, product, reset, containersEnabled, packHelpersEnabled]);
 
   const save = useApiMutation(
     async (values: FormValues) => {
-      const volume = parseOptionalNumber(values.volume);
-      const capacity = parseOptionalNumber(values.containerCapacity);
-      const packRaw = values.unitsPerPack?.trim() ?? "";
-      const labelRaw = values.packLabel?.trim() ?? "";
+      const isKgSave = values.baseUnit === "KG";
+      const volume = isKgSave ? undefined : parseOptionalNumber(values.volume);
+      const capacity = containersEnabled
+        ? parseOptionalNumber(values.containerCapacity)
+        : undefined;
+      const packRaw = packHelpersEnabled ? (values.unitsPerPack?.trim() ?? "") : "";
+      const labelRaw = packHelpersEnabled ? (values.packLabel?.trim() ?? "") : "";
       const payload = {
         name: values.name.trim(),
         baseUnit: values.baseUnit,
-        volume: volume ?? null,
+        volume: isKgSave ? null : (volume ?? null),
         unit: values.unit?.trim() || null,
         sku: values.sku?.trim() || null,
         defaultSellingPrice: Number(values.defaultSellingPrice),
-        unitsPerPack: packRaw ? Number(packRaw) : null,
-        packLabel: labelRaw || null,
-        containerCapacity: capacity ?? null,
-        allowFractionalQty: values.allowFractionalQty,
-        isReturnable: values.isReturnable,
-        containerType: values.containerType?.trim() || null,
+        unitsPerPack: packHelpersEnabled && packRaw ? Number(packRaw) : null,
+        packLabel: packHelpersEnabled && labelRaw ? labelRaw : null,
+        containerCapacity: containersEnabled ? (capacity ?? null) : null,
+        allowFractionalQty: isKgSave ? false : values.allowFractionalQty,
+        isReturnable: containersEnabled ? values.isReturnable : false,
+        containerType: containersEnabled ? values.containerType?.trim() || null : null,
         isActive: values.isActive,
       };
 
@@ -217,7 +230,9 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Product" : "Add Product"}</DialogTitle>
           <DialogDescription>
-            Sale is always in the base unit. Carton/crate is only an input helper.
+            {packHelpersEnabled
+              ? "Sale is always in the base unit. Carton/crate is only an input helper."
+              : "Sale is always in the base unit (price × quantity delivered)."}
           </DialogDescription>
         </DialogHeader>
 
@@ -229,7 +244,10 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
           )}
 
           <FormField label="Name" error={errors.name?.message} required>
-            <Input placeholder="e.g. 19L Water Can" {...register("name")} />
+            <Input
+              placeholder={isKg ? "e.g. Basmati Rice" : "e.g. 19L Water Can"}
+              {...register("name")}
+            />
           </FormField>
 
           <FormField label="Base unit" error={errors.baseUnit?.message} required>
@@ -239,6 +257,9 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
                   const next = e.target.value as ProductBaseUnit;
                   setValue("allowFractionalQty", defaultFractional(next));
                   setValue("unit", next === "LTR" ? "L" : next === "KG" ? "kg" : "pcs");
+                  if (next === "KG") {
+                    setValue("volume", "");
+                  }
                 },
               })}
             >
@@ -256,7 +277,7 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
             <Input
               type="number"
               step="any"
-              placeholder="250"
+              placeholder={isKg ? "350" : "250"}
               {...register("defaultSellingPrice")}
             />
             <p className="mt-1 text-xs text-slate-500">
@@ -264,43 +285,53 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
             </p>
           </FormField>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <FormField label="Volume (optional)" error={errors.volume?.message}>
-              <Input type="number" step="any" placeholder="19" {...register("volume")} />
-            </FormField>
+          {showVolume ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <FormField label="Volume (optional)" error={errors.volume?.message}>
+                <Input type="number" step="any" placeholder="19" {...register("volume")} />
+              </FormField>
+              <FormField label="Display unit" error={errors.unit?.message}>
+                <Input placeholder="L, kg, pcs…" {...register("unit")} />
+              </FormField>
+            </div>
+          ) : (
             <FormField label="Display unit" error={errors.unit?.message}>
-              <Input placeholder="L, kg, pcs…" {...register("unit")} />
+              <Input placeholder="kg" {...register("unit")} />
             </FormField>
-          </div>
+          )}
 
           <FormField label="SKU" error={errors.sku?.message}>
             <Input placeholder="Optional" {...register("sku")} />
           </FormField>
 
-          <div className="space-y-3 rounded-lg border border-slate-200 p-3">
-            <p className="text-sm font-medium text-slate-800">Pack helper (optional)</p>
-            <p className="text-xs text-slate-500">
-              For cartons/crates only. Delivery can enter packs + loose; system stores pieces.
-            </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <FormField label="Pack label" error={errors.packLabel?.message}>
-                <Input placeholder="CTN / Crate" {...register("packLabel")} />
-              </FormField>
-              <FormField label="Units per pack" error={errors.unitsPerPack?.message}>
-                <Input inputMode="numeric" placeholder="12" {...register("unitsPerPack")} />
-              </FormField>
+          {packHelpersEnabled && (
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+              <p className="text-sm font-medium text-slate-800">Pack helper (optional)</p>
+              <p className="text-xs text-slate-500">
+                For cartons/crates only. Delivery can enter packs + loose; system stores pieces.
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <FormField label="Pack label" error={errors.packLabel?.message}>
+                  <Input placeholder="CTN / Crate" {...register("packLabel")} />
+                </FormField>
+                <FormField label="Units per pack" error={errors.unitsPerPack?.message}>
+                  <Input inputMode="numeric" placeholder="12" {...register("unitsPerPack")} />
+                </FormField>
+              </div>
             </div>
-          </div>
+          )}
 
-          <FormField
-            label="Container capacity (optional)"
-            error={errors.containerCapacity?.message}
-          >
-            <Input type="number" step="any" placeholder="20" {...register("containerCapacity")} />
-            <p className="mt-1 text-xs text-slate-500">
-              e.g. 20 for a 20L returnable can — packaging size, not the sale qty.
-            </p>
-          </FormField>
+          {containersEnabled && (
+            <FormField
+              label="Container capacity (optional)"
+              error={errors.containerCapacity?.message}
+            >
+              <Input type="number" step="any" placeholder="20" {...register("containerCapacity")} />
+              <p className="mt-1 text-xs text-slate-500">
+                e.g. 20 for a 20L returnable can — packaging size, not the sale qty.
+              </p>
+            </FormField>
+          )}
 
           {!isEdit && (
             <FormField label="Initial Cost (optional)" error={errors.initialCostPerUnit?.message}>
@@ -314,29 +345,37 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
           )}
 
           <div className="space-y-2 pt-1">
-            <Checkbox
-              label="Allow fractional quantity"
-              checked={allowFractionalQty}
-              onChange={(e) => setValue("allowFractionalQty", e.target.checked)}
-            />
-            <p className="text-xs text-slate-500">
-              On for oil (litres) / rice (kg). Off for whole cans and bottles.
-            </p>
-            <Checkbox
-              label="Returnable packaging"
-              checked={isReturnable}
-              onChange={(e) => setValue("isReturnable", e.target.checked)}
-            />
-            <p className="text-xs text-slate-500">
-              On for water cans and returnable packaging. Off for rice/bags — no empties on
-              delivery.
-            </p>
-            <FormField label="Container type" error={errors.containerType?.message}>
-              <Input
-                placeholder="Optional (for returnable packaging)"
-                {...register("containerType")}
-              />
-            </FormField>
+            {showFractional && (
+              <>
+                <Checkbox
+                  label="Allow fractional quantity"
+                  checked={allowFractionalQty}
+                  onChange={(e) => setValue("allowFractionalQty", e.target.checked)}
+                />
+                <p className="text-xs text-slate-500">
+                  On for oil (litres). Off for whole cans and bottles.
+                </p>
+              </>
+            )}
+            {containersEnabled && (
+              <>
+                <Checkbox
+                  label="Returnable packaging"
+                  checked={isReturnable}
+                  onChange={(e) => setValue("isReturnable", e.target.checked)}
+                />
+                <p className="text-xs text-slate-500">
+                  On for water cans and returnable packaging. Off for rice/bags — no empties on
+                  delivery.
+                </p>
+                <FormField label="Container type" error={errors.containerType?.message}>
+                  <Input
+                    placeholder="Optional (for returnable packaging)"
+                    {...register("containerType")}
+                  />
+                </FormField>
+              </>
+            )}
             <Checkbox
               label="Active"
               checked={isActive}

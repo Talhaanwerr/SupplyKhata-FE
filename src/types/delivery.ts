@@ -6,6 +6,8 @@ export type DeliveryStatus = "DELIVERED" | "PARTIAL" | "FAILED" | "CANCELLED";
 export interface DeliveryRunStockPayload {
   productId: string;
   filledCount: number;
+  /** Filled cans on vehicle. Required for returnable LTR/KG when filledCount > 0. */
+  filledPackagingCount?: number;
   emptyCount: number;
 }
 
@@ -40,6 +42,8 @@ export interface DeliveryItem {
   productId: string;
   product: { id: string; name: string };
   quantityDelivered: number;
+  /** Filled cans given to customer (LTR/KG explicit; PCS usually = qty). */
+  containersDelivered?: number;
   emptiesReceived: number;
   sellingPriceSnapshot: number;
   unitCostSnapshot: number;
@@ -171,6 +175,7 @@ export interface CreateDeliveryPayload {
     productId: string;
     quantityDelivered: number;
     emptiesReceived: number;
+    containersDelivered?: number;
   }>;
 }
 

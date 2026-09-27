@@ -38,7 +38,6 @@ import { getSafeErrorMessage } from "@/lib/safe-error";
 import { INT_RE, MONEY_RE, QTY_RE } from "@/lib/form-number";
 import { PERMISSIONS } from "@/constants/permissions";
 import {
-  CUSTOMERS_QUERY_KEY,
   CUSTOMER_BALANCE_QUERY_KEY,
   CUSTOMER_CONTAINER_BALANCE_QUERY_KEY,
   CUSTOMER_DETAIL_QUERY_KEY,
@@ -55,18 +54,21 @@ import { productsApi } from "@/lib/products-api";
 import type { DeliveryDetail, DeliveryRunStockPayload, PaymentMethod } from "@/types/delivery";
 import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 import type { Product } from "@/types/products";
-import { baseUnitLabel } from "@/types/products";
+import { baseUnitLabel, needsExplicitPackagingCount } from "@/types/products";
 import type { PlannedStop } from "@/types/planned-stops";
+import { CustomerSearchSelect } from "@/features/tenant/customers/CustomerSearchSelect";
 
 const itemSchema = z.object({
   productId: z.string().min(1),
   quantityDelivered: z.string().regex(QTY_RE, "Qty must be a non-negative number (max 3 decimals)"),
+  containersDelivered: z.string().regex(INT_RE, "Cans must be a whole number").optional(),
   emptiesReceived: z.string().regex(INT_RE, "Empties must be a whole number"),
 });
 
 const stockRowSchema = z.object({
   productId: z.string().min(1),
   filledCount: z.string().regex(QTY_RE, "Units must be a non-negative number (max 3 decimals)"),
+  filledPackagingCount: z.string().regex(INT_RE, "Cans must be a whole number").optional(),
   emptyCount: z.string().regex(INT_RE, "Empty count must be a whole number"),
 });
 
@@ -158,7 +160,6 @@ function money(value: number | null | undefined) {
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-const EMPTY_CUSTOMERS: { id: string; name: string }[] = [];
 const EMPTY_PRODUCTS: Product[] = [];
 
 export function DeliveryRunDetailView() {
@@ -167,6 +168,7 @@ export function DeliveryRunDetailView() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
+  const { enabled: packHelpersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PACK_HELPERS);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [packHelper, setPackHelper] = useState<Record<string, { packs: string; loose: string }>>(
     {}
@@ -198,10 +200,6 @@ export function DeliveryRunDetailView() {
     queryFn: () => deliveryRunsApi.summary(runId),
     enabled: !!runId,
   });
-  const customersQuery = useQuery({
-    queryKey: [CUSTOMERS_QUERY_KEY, "delivery-form"],
-    queryFn: () => customersApi.list({ status: "ACTIVE", limit: 100 }),
-  });
   const productsQuery = useQuery({
     queryKey: [PRODUCTS_QUERY_KEY, "delivery-form"],
     queryFn: () => productsApi.list({ isActive: true }),
@@ -216,7 +214,6 @@ export function DeliveryRunDetailView() {
 
   const run = runQuery.data?.data;
   const summary = summaryQuery.data?.data;
-  const customers = customersQuery.data?.data?.items ?? EMPTY_CUSTOMERS;
   const products = productsQuery.data?.data ?? EMPTY_PRODUCTS;
   const isClosed = run?.status === "CLOSED";
 
@@ -293,6 +290,22 @@ export function DeliveryRunDetailView() {
     return map;
   }, [run]);
 
+  const remainingCansByProduct = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!run) return map;
+    for (const stock of run.stocks) {
+      if (stock.stockType !== "OPENING") continue;
+      map.set(stock.productId, stock.filledPackagingCount ?? 0);
+    }
+    for (const delivery of run.deliveries) {
+      if (delivery.status === "CANCELLED") continue;
+      for (const item of delivery.items ?? []) {
+        map.set(item.productId, (map.get(item.productId) ?? 0) - (item.containersDelivered ?? 0));
+      }
+    }
+    return map;
+  }, [run]);
+
   const deliveredFilledByProduct = useMemo(() => {
     const map = new Map<string, number>();
     if (!run) return map;
@@ -300,6 +313,18 @@ export function DeliveryRunDetailView() {
       if (delivery.status === "CANCELLED") continue;
       for (const item of delivery.items ?? []) {
         map.set(item.productId, (map.get(item.productId) ?? 0) + item.quantityDelivered);
+      }
+    }
+    return map;
+  }, [run]);
+
+  const deliveredCansByProduct = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!run) return map;
+    for (const delivery of run.deliveries) {
+      if (delivery.status === "CANCELLED") continue;
+      for (const item of delivery.items ?? []) {
+        map.set(item.productId, (map.get(item.productId) ?? 0) + (item.containersDelivered ?? 0));
       }
     }
     return map;
@@ -314,6 +339,7 @@ export function DeliveryRunDetailView() {
       items: products.map((product) => ({
         productId: product.id,
         quantityDelivered: "0",
+        containersDelivered: "0",
         emptiesReceived: "0",
       })),
     }));
@@ -322,6 +348,7 @@ export function DeliveryRunDetailView() {
       closingStock: products.map((product) => ({
         productId: product.id,
         filledCount: "0",
+        filledPackagingCount: "0",
         emptyCount: "0",
       })),
     }));
@@ -379,6 +406,7 @@ export function DeliveryRunDetailView() {
         return {
           productId: product.id,
           filledCount: String(stock?.filledCount ?? 0),
+          filledPackagingCount: String(stock?.filledPackagingCount ?? 0),
           emptyCount: String(stock?.emptyCount ?? 0),
         };
       }),
@@ -479,10 +507,14 @@ export function DeliveryRunDetailView() {
           .map((item) => {
             const product = products.find((p) => p.id === item.productId);
             const allowEmpties = product ? tracksContainers(product) : false;
+            const qty = Number(item.quantityDelivered);
             return {
               productId: item.productId,
-              quantityDelivered: Number(item.quantityDelivered),
+              quantityDelivered: qty,
               emptiesReceived: allowEmpties ? Number(item.emptiesReceived) : 0,
+              ...(allowEmpties && product && needsExplicitPackagingCount(product) && qty > 0
+                ? { containersDelivered: Number(item.containersDelivered || "0") }
+                : {}),
             };
           }),
       });
@@ -504,6 +536,7 @@ export function DeliveryRunDetailView() {
           items: products.map((product) => ({
             productId: product.id,
             quantityDelivered: "0",
+            containersDelivered: "0",
             emptiesReceived: "0",
           })),
         });
@@ -523,9 +556,14 @@ export function DeliveryRunDetailView() {
         closingStock: values.closingStock.map((stock): DeliveryRunStockPayload => {
           const product = products.find((p) => p.id === stock.productId);
           const allowEmpty = product ? tracksContainers(product) : false;
+          const needsCans = allowEmpty && product ? needsExplicitPackagingCount(product) : false;
+          const filled = Number(stock.filledCount);
           return {
             productId: stock.productId,
-            filledCount: Number(stock.filledCount),
+            filledCount: filled,
+            ...(needsCans && filled > 0
+              ? { filledPackagingCount: Number(stock.filledPackagingCount || "0") }
+              : {}),
             emptyCount: allowEmpty ? Number(stock.emptyCount) : 0,
           };
         }),
@@ -548,9 +586,14 @@ export function DeliveryRunDetailView() {
         openingStock: values.openingStock.map((stock): DeliveryRunStockPayload => {
           const product = products.find((p) => p.id === stock.productId);
           const allowEmpty = product ? tracksContainers(product) : false;
+          const needsCans = allowEmpty && product ? needsExplicitPackagingCount(product) : false;
+          const filled = Number(stock.filledCount);
           return {
             productId: stock.productId,
-            filledCount: Number(stock.filledCount),
+            filledCount: filled,
+            ...(needsCans && filled > 0
+              ? { filledPackagingCount: Number(stock.filledPackagingCount || "0") }
+              : {}),
             emptyCount: allowEmpty ? Number(stock.emptyCount) : 0,
           };
         }),
@@ -584,6 +627,22 @@ export function DeliveryRunDetailView() {
         });
         return Promise.resolve();
       }
+      if (product && tracksContainers(product) && needsExplicitPackagingCount(product)) {
+        const cans = Number(item.containersDelivered || "0");
+        if (!Number.isInteger(cans) || cans < 1) {
+          deliveryForm.setError(`items.${index}.containersDelivered`, {
+            message: "Enter how many cans you are giving",
+          });
+          return Promise.resolve();
+        }
+        const cansLeft = remainingCansByProduct.get(item.productId) ?? 0;
+        if (cans > cansLeft) {
+          deliveryForm.setError("root", {
+            message: `Only ${cansLeft} filled cans left on this run for "${product.name}"`,
+          });
+          return Promise.resolve();
+        }
+      }
     }
     return createDelivery.mutateAsync(values);
   }
@@ -592,12 +651,33 @@ export function DeliveryRunDetailView() {
     for (const stock of values.openingStock) {
       const filled = Number(stock.filledCount);
       const delivered = deliveredFilledByProduct.get(stock.productId) ?? 0;
+      const product = products.find((row) => row.id === stock.productId);
       if (filled < delivered) {
-        const product = products.find((row) => row.id === stock.productId);
         editForm.setError("root", {
           message: `Opening filled for "${product?.name ?? "product"}" cannot be below already delivered (${delivered})`,
         });
         return Promise.resolve();
+      }
+      if (
+        product &&
+        tracksContainers(product) &&
+        needsExplicitPackagingCount(product) &&
+        filled > 0
+      ) {
+        const cans = Number(stock.filledPackagingCount || "0");
+        const cansDelivered = deliveredCansByProduct.get(stock.productId) ?? 0;
+        if (!Number.isInteger(cans) || cans < 1) {
+          editForm.setError("root", {
+            message: `Enter how many cans hold the loaded units for "${product.name}"`,
+          });
+          return Promise.resolve();
+        }
+        if (cans < cansDelivered) {
+          editForm.setError("root", {
+            message: `Opening cans for "${product.name}" cannot be below already given (${cansDelivered})`,
+          });
+          return Promise.resolve();
+        }
       }
     }
     return updateOpening.mutateAsync(values);
@@ -681,6 +761,7 @@ export function DeliveryRunDetailView() {
               {lines.map((item) => (
                 <p key={item.id} className="text-sm text-slate-800 tabular-nums">
                   {item.quantityDelivered}
+                  {(item.containersDelivered ?? 0) > 0 ? ` (${item.containersDelivered} cans)` : ""}
                 </p>
               ))}
             </div>
@@ -930,14 +1011,16 @@ export function DeliveryRunDetailView() {
                 error={deliveryForm.formState.errors.customerId?.message}
                 required
               >
-                <Select {...deliveryForm.register("customerId")}>
-                  <option value="">Select customer</option>
-                  {customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.name}
-                    </option>
-                  ))}
-                </Select>
+                <CustomerSearchSelect
+                  value={deliveryForm.watch("customerId")}
+                  onChange={(id) =>
+                    deliveryForm.setValue("customerId", id, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    })
+                  }
+                  error={deliveryForm.formState.errors.customerId?.message}
+                />
               </FormField>
               <FormField
                 label="Date"
@@ -1112,7 +1195,9 @@ export function DeliveryRunDetailView() {
             <div className="space-y-3">
               {products.map((product, index) => {
                 const available = remainingFilledByProduct.get(product.id) ?? 0;
+                const cansLeft = remainingCansByProduct.get(product.id) ?? 0;
                 const unit = baseUnitLabel(product.baseUnit ?? "PCS");
+                const needsCans = tracksContainers(product) && needsExplicitPackagingCount(product);
                 const helper = packHelper[product.id] ?? { packs: "", loose: "" };
                 const applyPack = (packs: string, loose: string) => {
                   setPackHelper((prev) => ({ ...prev, [product.id]: { packs, loose } }));
@@ -1133,11 +1218,12 @@ export function DeliveryRunDetailView() {
                           className={`text-xs ${available > 0 ? "text-slate-500" : "text-red-600"}`}
                         >
                           Available on run: {available} {unit}
+                          {needsCans ? ` · ${cansLeft} cans left` : ""}
                         </p>
-                        {product.baseUnit === "LTR" && product.containerCapacity != null && (
+                        {needsCans && (
                           <p className="text-xs text-slate-500">
-                            Enter litres delivered. Can size {product.containerCapacity}L is
-                            packaging, not qty.
+                            Enter litres/kg sold, then how many filled cans you are giving (e.g. 40L
+                            in 3 cans → qty 40, cans 3).
                           </p>
                         )}
                       </div>
@@ -1145,38 +1231,46 @@ export function DeliveryRunDetailView() {
                         Price: {money(priceByProduct.get(product.id))}/{unit}
                       </span>
                     </div>
-                    {product.hasPackHelper && product.unitsPerPack != null && (
-                      <div className="mb-3 grid gap-3 sm:grid-cols-3">
-                        <FormField label={`Packs (${product.packLabel ?? "pack"})`}>
-                          <Input
-                            className="h-11 text-base"
-                            inputMode="numeric"
-                            value={helper.packs}
-                            onChange={(e) => applyPack(e.target.value, helper.loose)}
-                          />
-                        </FormField>
-                        <FormField label="Loose pieces">
-                          <Input
-                            className="h-11 text-base"
-                            inputMode="numeric"
-                            value={helper.loose}
-                            onChange={(e) => applyPack(helper.packs, e.target.value)}
-                          />
-                        </FormField>
-                        <FormField label="= pieces">
-                          <Input
-                            className="h-11 text-base"
-                            readOnly
-                            value={String(
-                              (Number(helper.packs) || 0) * product.unitsPerPack +
-                                (Number(helper.loose) || 0)
-                            )}
-                          />
-                        </FormField>
-                      </div>
-                    )}
+                    {packHelpersEnabled &&
+                      product.hasPackHelper &&
+                      product.unitsPerPack != null && (
+                        <div className="mb-3 grid gap-3 sm:grid-cols-3">
+                          <FormField label={`Packs (${product.packLabel ?? "pack"})`}>
+                            <Input
+                              className="h-11 text-base"
+                              inputMode="numeric"
+                              value={helper.packs}
+                              onChange={(e) => applyPack(e.target.value, helper.loose)}
+                            />
+                          </FormField>
+                          <FormField label="Loose pieces">
+                            <Input
+                              className="h-11 text-base"
+                              inputMode="numeric"
+                              value={helper.loose}
+                              onChange={(e) => applyPack(helper.packs, e.target.value)}
+                            />
+                          </FormField>
+                          <FormField label="= pieces">
+                            <Input
+                              className="h-11 text-base"
+                              readOnly
+                              value={String(
+                                (Number(helper.packs) || 0) * product.unitsPerPack +
+                                  (Number(helper.loose) || 0)
+                              )}
+                            />
+                          </FormField>
+                        </div>
+                      )}
                     <div
-                      className={`grid gap-3 ${tracksContainers(product) ? "sm:grid-cols-2" : ""}`}
+                      className={`grid gap-3 ${
+                        tracksContainers(product)
+                          ? needsCans
+                            ? "sm:grid-cols-3"
+                            : "sm:grid-cols-2"
+                          : ""
+                      }`}
                     >
                       <FormField
                         label={`Qty delivered (${unit})`}
@@ -1190,6 +1284,22 @@ export function DeliveryRunDetailView() {
                           {...deliveryForm.register(`items.${index}.quantityDelivered`)}
                         />
                       </FormField>
+                      {needsCans && (
+                        <FormField
+                          label="Cans given"
+                          error={
+                            deliveryForm.formState.errors.items?.[index]?.containersDelivered
+                              ?.message
+                          }
+                        >
+                          <Input
+                            className="h-11 text-base"
+                            inputMode="numeric"
+                            placeholder="e.g. 1"
+                            {...deliveryForm.register(`items.${index}.containersDelivered`)}
+                          />
+                        </FormField>
+                      )}
                       {tracksContainers(product) && (
                         <FormField
                           label="Empties received"
@@ -1292,15 +1402,26 @@ export function DeliveryRunDetailView() {
             </FormField>
             {products.map((product, index) => {
               const delivered = deliveredFilledByProduct.get(product.id) ?? 0;
+              const cansDelivered = deliveredCansByProduct.get(product.id) ?? 0;
+              const needsCans = tracksContainers(product) && needsExplicitPackagingCount(product);
               return (
                 <div key={product.id} className="rounded-xl border border-slate-200 p-3">
                   <input type="hidden" {...editForm.register(`openingStock.${index}.productId`)} />
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <p className="font-medium text-slate-900">{product.name}</p>
-                    <p className="text-xs text-slate-500">Already delivered: {delivered}</p>
+                    <p className="text-xs text-slate-500">
+                      Already delivered: {delivered}
+                      {needsCans ? ` · ${cansDelivered} cans` : ""}
+                    </p>
                   </div>
                   <div
-                    className={`grid gap-3 ${tracksContainers(product) ? "sm:grid-cols-2" : ""}`}
+                    className={`grid gap-3 ${
+                      tracksContainers(product)
+                        ? needsCans
+                          ? "sm:grid-cols-3"
+                          : "sm:grid-cols-2"
+                        : ""
+                    }`}
                   >
                     <FormField
                       label={
@@ -1315,6 +1436,20 @@ export function DeliveryRunDetailView() {
                         {...editForm.register(`openingStock.${index}.filledCount`)}
                       />
                     </FormField>
+                    {needsCans && (
+                      <FormField
+                        label="In how many cans?"
+                        error={
+                          editForm.formState.errors.openingStock?.[index]?.filledPackagingCount
+                            ?.message
+                        }
+                      >
+                        <Input
+                          inputMode="numeric"
+                          {...editForm.register(`openingStock.${index}.filledPackagingCount`)}
+                        />
+                      </FormField>
+                    )}
                     {tracksContainers(product) && (
                       <FormField
                         label="Opening empty"
@@ -1394,38 +1529,65 @@ export function DeliveryRunDetailView() {
                 {...closeForm.register("closingCash")}
               />
             </FormField>
-            {products.map((product, index) => (
-              <div key={product.id} className="rounded-xl border border-slate-200 p-3">
-                <input type="hidden" {...closeForm.register(`closingStock.${index}.productId`)} />
-                <p className="mb-3 font-medium text-slate-900">{product.name}</p>
-                <div className={`grid gap-3 ${tracksContainers(product) ? "sm:grid-cols-2" : ""}`}>
-                  <FormField
-                    label={
-                      tracksContainers(product) && product.baseUnit === "PCS"
-                        ? "Closing filled"
-                        : `Closing units (${baseUnitLabel(product.baseUnit ?? "PCS")})`
-                    }
-                    error={closeForm.formState.errors.closingStock?.[index]?.filledCount?.message}
+            {products.map((product, index) => {
+              const needsCans = tracksContainers(product) && needsExplicitPackagingCount(product);
+              return (
+                <div key={product.id} className="rounded-xl border border-slate-200 p-3">
+                  <input type="hidden" {...closeForm.register(`closingStock.${index}.productId`)} />
+                  <p className="mb-3 font-medium text-slate-900">{product.name}</p>
+                  <div
+                    className={`grid gap-3 ${
+                      tracksContainers(product)
+                        ? needsCans
+                          ? "sm:grid-cols-3"
+                          : "sm:grid-cols-2"
+                        : ""
+                    }`}
                   >
-                    <Input
-                      inputMode={product.allowFractionalQty ? "decimal" : "numeric"}
-                      {...closeForm.register(`closingStock.${index}.filledCount`)}
-                    />
-                  </FormField>
-                  {tracksContainers(product) && (
                     <FormField
-                      label="Closing empty"
-                      error={closeForm.formState.errors.closingStock?.[index]?.emptyCount?.message}
+                      label={
+                        tracksContainers(product) && product.baseUnit === "PCS"
+                          ? "Closing filled"
+                          : `Closing units (${baseUnitLabel(product.baseUnit ?? "PCS")})`
+                      }
+                      error={closeForm.formState.errors.closingStock?.[index]?.filledCount?.message}
                     >
                       <Input
-                        inputMode="numeric"
-                        {...closeForm.register(`closingStock.${index}.emptyCount`)}
+                        inputMode={product.allowFractionalQty ? "decimal" : "numeric"}
+                        {...closeForm.register(`closingStock.${index}.filledCount`)}
                       />
                     </FormField>
-                  )}
+                    {needsCans && (
+                      <FormField
+                        label="In how many cans?"
+                        error={
+                          closeForm.formState.errors.closingStock?.[index]?.filledPackagingCount
+                            ?.message
+                        }
+                      >
+                        <Input
+                          inputMode="numeric"
+                          {...closeForm.register(`closingStock.${index}.filledPackagingCount`)}
+                        />
+                      </FormField>
+                    )}
+                    {tracksContainers(product) && (
+                      <FormField
+                        label="Closing empty"
+                        error={
+                          closeForm.formState.errors.closingStock?.[index]?.emptyCount?.message
+                        }
+                      >
+                        <Input
+                          inputMode="numeric"
+                          {...closeForm.register(`closingStock.${index}.emptyCount`)}
+                        />
+                      </FormField>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {containersEnabled && closePreview.length > 0 && (
               <div className="rounded-lg bg-slate-50 p-3">
                 <p className="mb-2 text-sm font-medium text-slate-900">Discrepancy preview</p>
@@ -1508,6 +1670,7 @@ export function DeliveryRunDetailView() {
                       <tr>
                         <th className="px-3 py-2 font-medium">Product</th>
                         <th className="px-3 py-2 font-medium">Delivered</th>
+                        {containersEnabled && <th className="px-3 py-2 font-medium">Cans</th>}
                         {containersEnabled && <th className="px-3 py-2 font-medium">Empties</th>}
                         <th className="px-3 py-2 font-medium">Price</th>
                         <th className="px-3 py-2 font-medium">Line total</th>
@@ -1523,6 +1686,11 @@ export function DeliveryRunDetailView() {
                             </td>
                             <td className="px-3 py-2 tabular-nums">{item.quantityDelivered}</td>
                             {containersEnabled && (
+                              <td className="px-3 py-2 tabular-nums">
+                                {item.containersDelivered ?? 0}
+                              </td>
+                            )}
+                            {containersEnabled && (
                               <td className="px-3 py-2 tabular-nums">{item.emptiesReceived}</td>
                             )}
                             <td className="px-3 py-2 tabular-nums">
@@ -1536,7 +1704,7 @@ export function DeliveryRunDetailView() {
                       ).length === 0 && (
                         <tr>
                           <td
-                            colSpan={containersEnabled ? 5 : 4}
+                            colSpan={containersEnabled ? 6 : 4}
                             className="px-3 py-4 text-center text-slate-500"
                           >
                             No product lines on this delivery.
@@ -1677,6 +1845,7 @@ function StockCard({
     id: string;
     product: { id: string; name: string };
     filledCount: number;
+    filledPackagingCount?: number;
     emptyCount: number;
   }>;
   showEmpties?: boolean;
@@ -1690,19 +1859,25 @@ function StockCard({
         {rows.length === 0 ? (
           <p className="text-sm text-slate-500">Not recorded yet.</p>
         ) : (
-          rows.map((row) => (
-            <div
-              key={row.id}
-              className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm"
-            >
-              <span className="font-medium text-slate-900">{row.product.name}</span>
-              <span className="text-slate-600">
-                {showEmpties
-                  ? `${row.filledCount} filled / ${row.emptyCount} empty`
-                  : `${row.filledCount} units`}
-              </span>
-            </div>
-          ))
+          rows.map((row) => {
+            const cans =
+              row.filledPackagingCount != null && row.filledPackagingCount > 0
+                ? ` (${row.filledPackagingCount} cans)`
+                : "";
+            return (
+              <div
+                key={row.id}
+                className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm"
+              >
+                <span className="font-medium text-slate-900">{row.product.name}</span>
+                <span className="text-slate-600">
+                  {showEmpties
+                    ? `${row.filledCount} filled${cans} / ${row.emptyCount} empty`
+                    : `${row.filledCount} units${cans}`}
+                </span>
+              </div>
+            );
+          })
         )}
       </CardContent>
     </Card>
