@@ -1,5 +1,50 @@
 import type { NextConfig } from "next";
 import path from "path";
+import withPWAInit from "@ducanh2912/next-pwa";
+
+/**
+ * PWA via @ducanh2912/next-pwa (Workbox). App-shell only:
+ * - Never cache /api/v1/* (auth / ledger / orders JSON)
+ * - Disabled in `next dev` and when DISABLE_PWA=1
+ * - Offline document fallback → /offline
+ * - Requires webpack production build (`next build --webpack`) — Next 16 Turbopack
+ *   cannot apply this plugin's webpack hooks.
+ */
+const pwaDisabled =
+  process.env.NODE_ENV === "development" ||
+  process.env.DISABLE_PWA === "1" ||
+  process.env.DISABLE_PWA === "true";
+
+const withPWA = withPWAInit({
+  dest: "public",
+  disable: pwaDisabled,
+  register: true,
+  // Avoid sticky cached start HTML after deploy / auth changes
+  cacheStartUrl: false,
+  dynamicStartUrl: true,
+  fallbacks: {
+    document: "/offline",
+  },
+  extendDefaultRuntimeCaching: true,
+  workboxOptions: {
+    disableDevLogs: true,
+    runtimeCaching: [
+      {
+        // Same-origin API proxy + any /api path — never Cache Storage
+        urlPattern: ({ url }) =>
+          url.pathname.startsWith("/api/") || url.pathname.includes("/api/v1"),
+        handler: "NetworkOnly",
+        method: "GET",
+      },
+      {
+        urlPattern: ({ url }) =>
+          url.pathname.startsWith("/api/") || url.pathname.includes("/api/v1"),
+        handler: "NetworkOnly",
+        method: "POST",
+      },
+    ],
+  },
+});
 
 /**
  * Production security headers for the App Router.
@@ -52,6 +97,8 @@ const contentSecurityPolicy = [
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
+  // Service worker registration (PWA)
+  "worker-src 'self'",
   `img-src 'self' data: blob: https: ${connectExtra}`,
   "font-src 'self' data:",
   // Next.js requires unsafe-inline for some styles in App Router; avoid unsafe-eval in prod
@@ -108,4 +155,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withPWA(nextConfig);

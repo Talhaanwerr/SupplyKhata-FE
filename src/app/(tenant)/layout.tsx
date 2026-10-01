@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { TenantSidebar } from "@/components/layout/TenantSidebar";
 import { TopHeader } from "@/components/layout/TopHeader";
+import { PwaInstallBanner } from "@/components/layout/PwaInstallBanner";
 
 export const metadata: Metadata = {
   title: {
@@ -17,6 +18,7 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
         <TenantSidebar />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <TopHeader />
+          <PwaInstallBanner />
           <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">{children}</main>
         </div>
       </div>

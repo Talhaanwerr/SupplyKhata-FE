@@ -240,6 +240,37 @@ export const PERMISSIONS = {
     DELETE: "planned-stops:delete",
     MANAGE: "planned-stops:manage",
   },
+
+  // ─── Orders (customer order channel) ─────────────────────────────────────
+  ORDERS: {
+    CREATE: "orders:create",
+    READ: "orders:read",
+    UPDATE: "orders:update",
+    DELETE: "orders:delete",
+    MANAGE: "orders:manage",
+    CANCEL: "orders:cancel",
+    REFUND: "orders:refund",
+  },
+
+  // ─── POS (counter / walk-in sales) ───────────────────────────────────────
+  POS: {
+    CREATE: "pos:create",
+    READ: "pos:read",
+    UPDATE: "pos:update",
+    DELETE: "pos:delete",
+    MANAGE: "pos:manage",
+    VOID: "pos:void",
+  },
+
+  // ─── Invoices (period statements) ───────────────────────────────────────
+  INVOICES: {
+    CREATE: "invoices:create",
+    READ: "invoices:read",
+    UPDATE: "invoices:update",
+    DELETE: "invoices:delete",
+    MANAGE: "invoices:manage",
+    VOID: "invoices:void",
+  },
 } as const;
 
 /** Union of every permission string — useful for typing props. */

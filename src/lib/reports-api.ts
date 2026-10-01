@@ -10,6 +10,7 @@ import type {
   ExpensesReport,
   MonthlySummaryReport,
   ProductPerformanceReport,
+  ReportSalesChannel,
   ReportType,
   RiderCollectionReport,
   VehiclePerformanceReport,
@@ -26,17 +27,17 @@ function qs(params: Record<string, string | number | undefined | null>): string 
 }
 
 export const reportsApi = {
-  dailySales: (date?: string) =>
-    apiClient.get<ApiEnvelope<DailySalesReport>>(`/reports/daily-sales${qs({ date })}`),
+  dailySales: (date?: string, channel?: ReportSalesChannel) =>
+    apiClient.get<ApiEnvelope<DailySalesReport>>(`/reports/daily-sales${qs({ date, channel })}`),
 
-  monthlySummary: (month: number, year: number) =>
+  monthlySummary: (month: number, year: number, channel?: ReportSalesChannel) =>
     apiClient.get<ApiEnvelope<MonthlySummaryReport>>(
-      `/reports/monthly-summary${qs({ month, year })}`
+      `/reports/monthly-summary${qs({ month, year, channel })}`
     ),
 
-  productPerformance: (from?: string, to?: string) =>
+  productPerformance: (from?: string, to?: string, channel?: ReportSalesChannel) =>
     apiClient.get<ApiEnvelope<ProductPerformanceReport>>(
-      `/reports/product-performance${qs({ from, to })}`
+      `/reports/product-performance${qs({ from, to, channel })}`
     ),
 
   customerOutstanding: () =>
@@ -75,6 +76,7 @@ export const reportsApi = {
     riderId?: string;
     vehicleId?: string;
     search?: string;
+    channel?: ReportSalesChannel;
   }) => {
     const query = qs(params);
     const token = tokenManager.getAccessToken();

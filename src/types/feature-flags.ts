@@ -43,6 +43,9 @@ export const FEATURE_FLAG_SLUGS = {
   RETURNABLE_CONTAINERS: "returnable-containers",
   PACK_HELPERS: "pack-helpers",
   PLANT_FILL: "plant-fill",
+  ORDERS: "orders",
+  POS: "pos",
+  INVOICES: "invoices",
 } as const;
 
 export type FeatureFlagsListResponse = ApiEnvelope<(FeatureFlagItem | TenantFeatureFlagItem)[]>;

@@ -25,6 +25,8 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
     FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS
   );
   const { enabled: plantFillEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PLANT_FILL);
+  const { enabled: ordersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.ORDERS);
+  const { enabled: invoicesEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.INVOICES);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const sidebarNavQuery = useQuery({
@@ -36,6 +38,8 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
     if (!slug) return true;
     if (slug === FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS) return returnableContainersEnabled;
     if (slug === FEATURE_FLAG_SLUGS.PLANT_FILL) return plantFillEnabled;
+    if (slug === FEATURE_FLAG_SLUGS.ORDERS) return ordersEnabled;
+    if (slug === FEATURE_FLAG_SLUGS.INVOICES) return invoicesEnabled;
     return true;
   };
 
@@ -47,7 +51,7 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
           flagEnabled(item.featureFlag)
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- flags from hooks above
-    [user, returnableContainersEnabled, plantFillEnabled]
+    [user, returnableContainersEnabled, plantFillEnabled, ordersEnabled, invoicesEnabled]
   );
 
   const { primary, more } = useMemo(

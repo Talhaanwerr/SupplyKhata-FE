@@ -5,6 +5,8 @@
     "customers": "العملاء",
     "vehicles": "المركبات",
     "deliveryRuns": "جولات التسليم",
+    "orders": "الطلبات",
+    "invoices": "الفواتير",
     "refillBatches": "سجل تعبئة المصنع",
     "expenses": "المصروفات",
     "cashHandovers": "تسليم النقد",
@@ -169,5 +171,14 @@
     "markAllRead": "تحديد الكل كمقروء",
     "empty": "لا توجد إشعارات جديدة!",
     "emptyDescription": "أنت محدّث بكل شيء."
+  },
+  "pwa": {
+    "regionLabel": "تثبيت SupplyKhata",
+    "installTitle": "ثبّت SupplyKhata",
+    "installBody": "أضف التطبيق إلى الشاشة الرئيسية للوصول الأسرع — يعمل كتطبيق عادي.",
+    "installCta": "تثبيت التطبيق",
+    "iosTitle": "أضف SupplyKhata إلى الشاشة الرئيسية",
+    "iosBody": "اضغط مشاركة ثم إضافة إلى الشاشة الرئيسية — ثم افتحه كتطبيق.",
+    "dismiss": "ليس الآن"
   }
 }

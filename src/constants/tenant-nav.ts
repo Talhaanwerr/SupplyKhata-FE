@@ -10,6 +10,7 @@ import {
   Truck,
   Bike,
   ClipboardList,
+  ShoppingCart,
   Wallet,
   Droplets,
   Receipt,
@@ -17,6 +18,7 @@ import {
   Boxes,
   Banknote,
   CalendarDays,
+  FileText,
 } from "lucide-react";
 import { PERMISSIONS } from "@/constants/permissions";
 import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
@@ -28,6 +30,8 @@ export const TENANT_NAV_KEYS = [
   "customers",
   "vehicles",
   "deliveryRuns",
+  "orders",
+  "invoices",
   "refillBatches",
   "expenses",
   "cashHandovers",
@@ -82,6 +86,22 @@ export const TENANT_NAV_ITEMS: TenantNavItem[] = [
     labelKey: "deliveryRuns",
     icon: ClipboardList,
     permissions: [PERMISSIONS.DELIVERY_RUNS.READ, PERMISSIONS.DELIVERY_RUNS.MANAGE],
+  },
+  {
+    key: "orders",
+    href: "/orders",
+    labelKey: "orders",
+    icon: ShoppingCart,
+    permissions: [PERMISSIONS.ORDERS.READ, PERMISSIONS.ORDERS.CREATE],
+    featureFlag: FEATURE_FLAG_SLUGS.ORDERS,
+  },
+  {
+    key: "invoices",
+    href: "/invoices",
+    labelKey: "invoices",
+    icon: FileText,
+    permissions: [PERMISSIONS.INVOICES.READ, PERMISSIONS.INVOICES.CREATE],
+    featureFlag: FEATURE_FLAG_SLUGS.INVOICES,
   },
   {
     key: "refillBatches",

@@ -21,17 +21,24 @@ import { CustomerFormModal } from "./CustomerFormModal";
 import { CustomerLedgerTab } from "./CustomerLedgerTab";
 import { CustomerContainerBalanceTab } from "./CustomerContainerBalanceTab";
 import { CustomerDeliveryScheduleTab } from "./CustomerDeliveryScheduleTab";
+import { CustomerInvoicesTab } from "./CustomerInvoicesTab";
 import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 
-type Tab = "pricing" | "ledger" | "containers" | "schedule";
+type Tab = "pricing" | "ledger" | "containers" | "schedule" | "invoices";
 
 export function CustomerDetailView() {
   const params = useParams<{ id: string }>();
   const customerId = params.id;
   const [tab, setTab] = useState<Tab>("pricing");
   const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
-  const activeTab: Tab = tab === "containers" && !containersEnabled ? "pricing" : tab;
+  const { enabled: invoicesEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.INVOICES);
+  const activeTab: Tab =
+    tab === "containers" && !containersEnabled
+      ? "pricing"
+      : tab === "invoices" && !invoicesEnabled
+        ? "pricing"
+        : tab;
   const [editOpen, setEditOpen] = useState(false);
   const [toggleOpen, setToggleOpen] = useState(false);
   const qc = useQueryClient();
@@ -161,6 +168,7 @@ export function CustomerDetailView() {
             ["ledger", "Ledger"],
             ...(containersEnabled ? ([["containers", "Container Balance"]] as const) : []),
             ["schedule", "Delivery Schedule"],
+            ...(invoicesEnabled ? ([["invoices", "Invoices"]] as const) : []),
           ] as const
         ).map(([key, label]) => (
           <button
@@ -225,6 +233,10 @@ export function CustomerDetailView() {
       )}
 
       {activeTab === "schedule" && <CustomerDeliveryScheduleTab customerId={customerId} />}
+
+      {activeTab === "invoices" && invoicesEnabled && (
+        <CustomerInvoicesTab customerId={customerId} />
+      )}
 
       <CustomerFormModal
         open={editOpen}

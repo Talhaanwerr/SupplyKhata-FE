@@ -24,7 +24,7 @@ import {
 } from "@/constants/query-keys";
 import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
-import type { ReportType } from "@/types/reports";
+import type { ReportSalesChannel, ReportType } from "@/types/reports";
 
 type Tab =
   | "daily-sales"
@@ -55,10 +55,14 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "expenses", label: "Expenses" },
 ];
 
+const CHANNEL_TABS: Tab[] = ["daily-sales", "monthly-summary", "product-performance"];
+
 export function ReportsView() {
   const { toast } = useToast();
   const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
+  const { enabled: ordersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.ORDERS);
   const [tab, setTab] = useState<Tab>("daily-sales");
+  const [channel, setChannel] = useState<ReportSalesChannel>("delivery");
   const [date, setDate] = useState(today());
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
@@ -74,6 +78,10 @@ export function ReportsView() {
     [containersEnabled]
   );
 
+  const showChannel = ordersEnabled && CHANNEL_TABS.includes(tab);
+  const effectiveChannel: ReportSalesChannel =
+    showChannel && channel === "orders" ? "orders" : "delivery";
+
   const ridersQuery = useQuery({
     queryKey: [STAFF_RIDERS_QUERY_KEY, "reports"],
     queryFn: () => staffApi.list({ role: "rider", limit: 100 }),
@@ -86,15 +94,27 @@ export function ReportsView() {
   });
 
   const reportQuery = useQuery({
-    queryKey: [REPORTS_QUERY_KEY, tab, date, from, to, month, year, riderId, vehicleId, search],
+    queryKey: [
+      REPORTS_QUERY_KEY,
+      tab,
+      date,
+      from,
+      to,
+      month,
+      year,
+      riderId,
+      vehicleId,
+      search,
+      effectiveChannel,
+    ],
     queryFn: async () => {
       switch (tab) {
         case "daily-sales":
-          return reportsApi.dailySales(date);
+          return reportsApi.dailySales(date, effectiveChannel);
         case "monthly-summary":
-          return reportsApi.monthlySummary(month, year);
+          return reportsApi.monthlySummary(month, year, effectiveChannel);
         case "product-performance":
-          return reportsApi.productPerformance(from, to);
+          return reportsApi.productPerformance(from, to, effectiveChannel);
         case "customer-outstanding":
           return reportsApi.customerOutstanding();
         case "container-inventory":
@@ -130,6 +150,7 @@ export function ReportsView() {
         riderId: riderId || undefined,
         vehicleId: vehicleId || undefined,
         search: search || undefined,
+        channel: showChannel ? effectiveChannel : undefined,
       });
       toast({ title: `Exported ${format.toUpperCase()}`, variant: "success" });
     } catch (err) {
@@ -209,6 +230,15 @@ export function ReportsView() {
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {showChannel && (
+            <Select
+              value={effectiveChannel}
+              onChange={(e) => setChannel(e.target.value as ReportSalesChannel)}
+            >
+              <option value="delivery">Delivery sales</option>
+              <option value="orders">Order sales</option>
+            </Select>
+          )}
           {tab === "daily-sales" && (
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           )}
@@ -286,7 +316,46 @@ function ReportBody({ tab, data }: { tab: Tab; data: unknown }) {
   if (tab === "daily-sales") {
     const d = data as Awaited<ReturnType<typeof reportsApi.dailySales>>["data"];
     if (!d) return null;
-    if (d.deliveries.length === 0) {
+
+    if (d.channel === "orders") {
+      if (!d.orders?.length) {
+        return <EmptyState title="No orders" description={`Nothing placed on ${d.date}`} />;
+      }
+      return (
+        <div className="space-y-4">
+          {d.orders.map((row) => (
+            <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium text-slate-900">
+                  Order #{row.orderNumber} · {row.customerName}
+                </p>
+                <p className="text-sm text-slate-500">
+                  Total {money(row.total)} · Paid {money(row.amountPaid)} · {row.status} ·{" "}
+                  {row.paymentStatus}
+                </p>
+              </div>
+              <ul className="space-y-1 text-sm text-slate-700">
+                {row.items.map((item, i) => (
+                  <li key={`${row.id}-${i}`}>
+                    {item.productName}: {item.quantity} @ {money(item.unitPrice)} ={" "}
+                    {money(item.lineTotal)}
+                    {item.quantityDelivered > 0 ? ` · delivered ${item.quantityDelivered}` : ""}
+                  </li>
+                ))}
+              </ul>
+              {(row.deliveryCharges > 0 || row.discountTotal > 0) && (
+                <p className="mt-2 text-xs text-slate-500">
+                  {row.discountTotal > 0 ? `Discount ${money(row.discountTotal)} · ` : ""}
+                  {row.deliveryCharges > 0 ? `Delivery charges ${money(row.deliveryCharges)}` : ""}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (!d.deliveries?.length) {
       return <EmptyState title="No deliveries" description={`Nothing on ${d.date}`} />;
     }
     return (
@@ -319,12 +388,13 @@ function ReportBody({ tab, data }: { tab: Tab; data: unknown }) {
   if (tab === "monthly-summary") {
     const d = data as Awaited<ReturnType<typeof reportsApi.monthlySummary>>["data"];
     if (!d) return null;
+    const cogsLabel = d.channel === "orders" ? "Order COGS" : "Delivery COGS";
     return (
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {[
             ["Revenue", d.revenue],
-            ["Delivery COGS", d.deliveryCOGS],
+            [cogsLabel, d.deliveryCOGS],
             ["Refill COGS", d.refillCOGS],
             ["Expenses", d.operatingExpenses],
             ["Gross profit", d.grossProfit],

@@ -10,8 +10,12 @@ export type ReportType =
   | "collection-performance"
   | "expenses";
 
+/** Sales channel for daily / monthly / product reports (POS deferred). */
+export type ReportSalesChannel = "delivery" | "orders";
+
 export interface DailySalesReport {
   date: string;
+  channel: ReportSalesChannel;
   deliveries: Array<{
     id: string;
     status: string;
@@ -28,11 +32,33 @@ export interface DailySalesReport {
       lineTotal: number;
     }>;
   }>;
+  orders: Array<{
+    id: string;
+    orderNumber: number;
+    status: string;
+    paymentStatus: string;
+    customerName: string;
+    customerPhone: string;
+    subtotal: number;
+    discountTotal: number;
+    deliveryCharges: number;
+    total: number;
+    amountPaid: number;
+    amountDue: number;
+    items: Array<{
+      productName: string;
+      quantity: number;
+      quantityDelivered: number;
+      unitPrice: number;
+      lineTotal: number;
+    }>;
+  }>;
 }
 
 export interface MonthlySummaryReport {
   month: number;
   year: number;
+  channel: ReportSalesChannel;
   revenue: number;
   deliveryCOGS: number;
   refillCOGS: number;
@@ -52,6 +78,7 @@ export interface MonthlySummaryReport {
 export interface ProductPerformanceReport {
   from: string;
   to: string;
+  channel: ReportSalesChannel;
   products: Array<{
     productId: string;
     name: string;
