@@ -75,6 +75,19 @@ function isProtectedRoute(pathname: string): boolean {
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // PWA assets must never redirect to login — Chrome installability fetches
+  // /sw.js + manifest without a session; a redirect returns HTML and install fails.
+  if (
+    pathname === "/sw.js" ||
+    pathname === "/manifest.webmanifest" ||
+    pathname === "/offline" ||
+    pathname.startsWith("/workbox-") ||
+    pathname.startsWith("/fallback-") ||
+    pathname.startsWith("/icons/")
+  ) {
+    return NextResponse.next();
+  }
+
   // Same-origin API rewrite to Railway — must pass through (runs before rewrite).
   // Gating these redirects POST /api/v1/auth/login → /login?redirect=... → 405.
   if (pathname.startsWith("/api/v1")) {
@@ -129,6 +142,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/v1|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/v1|sw\\.js|workbox-.*\\.js|fallback-.*\\.js|manifest\\.webmanifest|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

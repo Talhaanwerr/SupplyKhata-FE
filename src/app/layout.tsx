@@ -4,6 +4,7 @@ import { QueryProvider } from "@/providers/query-provider";
 import { AuthProvider } from "@/providers/auth-provider";
 import { LocaleProvider } from "@/providers/locale-provider";
 import { ToastProvider } from "@/components/ui/toast";
+import { RegisterPwa } from "@/components/pwa/RegisterPwa";
 import "./globals.css";
 
 const inter = Inter({
@@ -60,6 +61,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${notoSansArabic.variable} font-sans antialiased`}>
+        <RegisterPwa />
         <QueryProvider>
           <LocaleProvider>
             <AuthProvider>

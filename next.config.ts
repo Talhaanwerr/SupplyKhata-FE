@@ -109,6 +109,9 @@ const contentSecurityPolicy = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // next-pwa injects webpack config; empty turbopack opts silence Next 16
+  // "webpack config without turbopack config" error during `next dev` (SW still disabled in dev).
+  turbopack: {},
   // Required for Docker standalone builds — emits a minimal server.js with
   // only the files needed at runtime (no node_modules copy required).
   output: "standalone",
