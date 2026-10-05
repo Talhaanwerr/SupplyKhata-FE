@@ -27,7 +27,7 @@ export function ProductBomSection({
   return (
     <PermissionGuard permission={PERMISSIONS.BOM.READ}>
       <BomEditor
-        key={`${bom?.id ?? "new"}-${productId}`}
+        key={`${res?.data?.id ?? "new"}-${productId}`}
         productId={productId}
         productName={productName}
         bom={res?.data ?? null}
