@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,6 +23,7 @@ import { FormField } from "@/components/ui/form-field";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { plannedStopsApi } from "@/lib/planned-stops-api";
+import { localTodayYmd } from "@/lib/calendar-date";
 import { areasApi } from "@/lib/areas-api";
 import { staffApi } from "@/lib/staff-api";
 import { productsApi } from "@/lib/products-api";
@@ -43,7 +44,7 @@ import { useAuthStore } from "@/store/auth-store";
 import { CustomerSearchSelect } from "@/features/tenant/customers/CustomerSearchSelect";
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localTodayYmd();
 }
 
 const STATUSES: { id: PlannedStopStatus | ""; label: string }[] = [
@@ -268,7 +269,7 @@ export function DailyListView() {
       <div className="space-y-6">
         <PageHeader
           title="Daily List"
-          description="Planned delivery stops — filter by date, area, rider"
+          description="Planned delivery stops â€” filter by date, area, rider"
           action={
             <PermissionGuard permission={PERMISSIONS.PLANNED_STOPS.CREATE}>
               <Button onClick={openAdd}>
@@ -320,7 +321,7 @@ export function DailyListView() {
 
         {/* List */}
         {listQuery.isLoading ? (
-          <p className="text-sm text-slate-500">Loading…</p>
+          <p className="text-sm text-slate-500">Loadingâ€¦</p>
         ) : listQuery.isError ? (
           <ErrorState title="Failed to load" onRetry={() => listQuery.refetch()} />
         ) : items.length === 0 ? (
@@ -354,13 +355,13 @@ export function DailyListView() {
                         {stop.customerPhone}
                       </a>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{stop.areaName ?? "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">{stop.areaName ?? "â€”"}</td>
                     <td className="px-4 py-3 text-slate-700">
                       {new Date(stop.planDate).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3">
                       {stop.items.length === 0 ? (
-                        <span className="text-slate-400">—</span>
+                        <span className="text-slate-400">â€”</span>
                       ) : (
                         <div className="space-y-0.5">
                           {stop.items.map((item) => (
@@ -414,7 +415,7 @@ export function DailyListView() {
       <Dialog open={!!editStop} onOpenChange={(v) => !v && setEditStop(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Edit Planned Stop — {editStop?.stop.customerName}</DialogTitle>
+            <DialogTitle>Edit Planned Stop â€” {editStop?.stop.customerName}</DialogTitle>
             <DialogDescription>
               Change the plan date or product quantities. Rider can further override on the delivery
               form.
@@ -474,7 +475,8 @@ export function DailyListView() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              {skipFail?.action === "skip" ? "Skip" : "Mark Failed"} — {skipFail?.stop.customerName}
+              {skipFail?.action === "skip" ? "Skip" : "Mark Failed"} â€”{" "}
+              {skipFail?.stop.customerName}
             </DialogTitle>
             <DialogDescription>
               {skipFail?.action === "skip"
@@ -520,7 +522,7 @@ export function DailyListView() {
               <CustomerSearchSelect
                 value={addState.customerId}
                 onChange={(customerId) => setAddState((prev) => ({ ...prev, customerId }))}
-                placeholder="Search customer by name or phone…"
+                placeholder="Search customer by name or phoneâ€¦"
               />
             </FormField>
             <FormField label="Plan date" required>

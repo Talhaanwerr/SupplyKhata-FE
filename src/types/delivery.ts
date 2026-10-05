@@ -102,8 +102,21 @@ export interface DeliveryRunListItem {
 }
 
 export interface DeliveryRunDetail extends Omit<DeliveryRunListItem, "deliveriesCount"> {
+  loadLocationId?: string | null;
+  loadLocation?: { id: string; name: string; isDefault: boolean } | null;
   stocks: DeliveryRunStock[];
   deliveries: DeliveryDetail[];
+}
+
+export interface WarehouseAvailabilityItem {
+  productId: string;
+  availableQty: number;
+}
+
+export interface WarehouseAvailabilityPayload {
+  locationId: string;
+  locationName: string;
+  items: WarehouseAvailabilityItem[];
 }
 
 export interface ProductDiscrepancy {
@@ -147,17 +160,21 @@ export interface CreateDeliveryRunPayload {
   openingStock: DeliveryRunStockPayload[];
   notes?: string | null;
   refillLoads?: DeliveryRunRefillLoadPayload[];
+  loadLocationId?: string | null;
 }
 
 export interface CloseDeliveryRunPayload {
   closingCash: number;
   closingStock: DeliveryRunStockPayload[];
+  /** Inventory ON only — leftover return to warehouse (partial OK). */
+  returnToWarehouse?: Array<{ productId: string; qty: number }>;
 }
 
 export interface UpdateDeliveryRunPayload {
   openingCash?: number;
   openingStock?: DeliveryRunStockPayload[];
   notes?: string | null;
+  loadLocationId?: string | null;
 }
 
 export interface CreateDeliveryPayload {

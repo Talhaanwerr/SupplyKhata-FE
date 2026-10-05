@@ -27,6 +27,12 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
   const { enabled: plantFillEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PLANT_FILL);
   const { enabled: ordersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.ORDERS);
   const { enabled: invoicesEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.INVOICES);
+  const { enabled: inventoryEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.INVENTORY);
+  const { enabled: vendorsEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.VENDORS);
+  const { enabled: rawMaterialsEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RAW_MATERIALS);
+  const { enabled: purchaseOrdersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PURCHASE_ORDERS);
+  const { enabled: vendorBillsEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.VENDOR_BILLS);
+  const { enabled: productionEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PRODUCTION);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const sidebarNavQuery = useQuery({
@@ -40,6 +46,12 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
     if (slug === FEATURE_FLAG_SLUGS.PLANT_FILL) return plantFillEnabled;
     if (slug === FEATURE_FLAG_SLUGS.ORDERS) return ordersEnabled;
     if (slug === FEATURE_FLAG_SLUGS.INVOICES) return invoicesEnabled;
+    if (slug === FEATURE_FLAG_SLUGS.INVENTORY) return inventoryEnabled;
+    if (slug === FEATURE_FLAG_SLUGS.VENDORS) return vendorsEnabled;
+    if (slug === FEATURE_FLAG_SLUGS.RAW_MATERIALS) return rawMaterialsEnabled;
+    if (slug === FEATURE_FLAG_SLUGS.PURCHASE_ORDERS) return purchaseOrdersEnabled;
+    if (slug === FEATURE_FLAG_SLUGS.VENDOR_BILLS) return vendorBillsEnabled;
+    if (slug === FEATURE_FLAG_SLUGS.PRODUCTION) return productionEnabled;
     return true;
   };
 
@@ -51,7 +63,19 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
           flagEnabled(item.featureFlag)
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- flags from hooks above
-    [user, returnableContainersEnabled, plantFillEnabled, ordersEnabled, invoicesEnabled]
+    [
+      user,
+      returnableContainersEnabled,
+      plantFillEnabled,
+      ordersEnabled,
+      invoicesEnabled,
+      inventoryEnabled,
+      vendorsEnabled,
+      rawMaterialsEnabled,
+      purchaseOrdersEnabled,
+      vendorBillsEnabled,
+      productionEnabled,
+    ]
   );
 
   const { primary, more } = useMemo(

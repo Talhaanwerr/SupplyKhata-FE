@@ -271,6 +271,81 @@ export const PERMISSIONS = {
     MANAGE: "invoices:manage",
     VOID: "invoices:void",
   },
+
+  // ─── Inventory (finished-goods warehouse stock) ─────────────────────────
+  INVENTORY: {
+    CREATE: "inventory:create",
+    READ: "inventory:read",
+    UPDATE: "inventory:update",
+    DELETE: "inventory:delete",
+    MANAGE: "inventory:manage",
+    ADJUST: "inventory:adjust",
+    TRANSFER: "inventory:transfer",
+  },
+
+  // ─── Vendors (supplier master) ──────────────────────────────────────────
+  VENDORS: {
+    CREATE: "vendors:create",
+    READ: "vendors:read",
+    UPDATE: "vendors:update",
+    DELETE: "vendors:delete",
+    MANAGE: "vendors:manage",
+  },
+
+  // ─── Raw materials ──────────────────────────────────────────────────────
+  RAW_MATERIALS: {
+    CREATE: "raw-materials:create",
+    READ: "raw-materials:read",
+    UPDATE: "raw-materials:update",
+    DELETE: "raw-materials:delete",
+    MANAGE: "raw-materials:manage",
+    ADJUST: "raw-materials:adjust",
+  },
+
+  // ─── Purchase orders ────────────────────────────────────────────────────
+  PURCHASE_ORDERS: {
+    CREATE: "purchase-orders:create",
+    READ: "purchase-orders:read",
+    UPDATE: "purchase-orders:update",
+    DELETE: "purchase-orders:delete",
+    MANAGE: "purchase-orders:manage",
+    CANCEL: "purchase-orders:cancel",
+  },
+
+  // ─── Goods receipt (GRN) ────────────────────────────────────────────────
+  GRN: {
+    CREATE: "grn:create",
+    READ: "grn:read",
+  },
+
+  // ─── Vendor bills & payables ────────────────────────────────────────────
+  VENDOR_BILLS: {
+    CREATE: "vendor-bills:create",
+    READ: "vendor-bills:read",
+    UPDATE: "vendor-bills:update",
+    DELETE: "vendor-bills:delete",
+    MANAGE: "vendor-bills:manage",
+    PAY: "vendor-bills:pay",
+  },
+
+  // ─── BOM / recipes ──────────────────────────────────────────────────────
+  BOM: {
+    CREATE: "bom:create",
+    READ: "bom:read",
+    UPDATE: "bom:update",
+  },
+
+  // ─── Production orders ──────────────────────────────────────────────────
+  PRODUCTION: {
+    CREATE: "production:create",
+    READ: "production:read",
+    UPDATE: "production:update",
+    DELETE: "production:delete",
+    MANAGE: "production:manage",
+    START: "production:start",
+    COMPLETE: "production:complete",
+    CANCEL: "production:cancel",
+  },
 } as const;
 
 /** Union of every permission string — useful for typing props. */

@@ -11,13 +11,14 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { ErrorState } from "@/components/ui/error-state";
 import { dashboardApi } from "@/lib/dashboard-api";
+import { localTodayYmd } from "@/lib/calendar-date";
 import { DASHBOARD_QUERY_KEY } from "@/constants/query-keys";
 import { PERMISSIONS } from "@/constants/permissions";
 import { usePermission } from "@/hooks/use-permission";
 import { useAuthStore } from "@/store/auth-store";
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localTodayYmd();
 }
 
 function money(n: number) {

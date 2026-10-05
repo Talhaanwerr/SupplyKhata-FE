@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
@@ -21,6 +21,7 @@ import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { expensesApi } from "@/lib/expenses-api";
+import { localTodayYmd } from "@/lib/calendar-date";
 import { staffApi } from "@/lib/staff-api";
 import { vehiclesApi } from "@/lib/vehicles-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
@@ -61,7 +62,7 @@ const schema = z
 type FormValues = z.infer<typeof schema>;
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localTodayYmd();
 }
 
 interface ExpenseFormModalProps {

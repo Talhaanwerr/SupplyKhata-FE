@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
@@ -21,6 +21,7 @@ import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { cashHandoversApi } from "@/lib/cash-handovers-api";
+import { localTodayYmd } from "@/lib/calendar-date";
 import { staffApi } from "@/lib/staff-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
 import { MONEY_RE } from "@/lib/form-number";
@@ -45,7 +46,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localTodayYmd();
 }
 
 function money(n: number) {
@@ -193,7 +194,7 @@ export function CashHandoverFormModal({ open, onClose, handover }: CashHandoverF
               {balanceQuery.isLoading ? (
                 <p className="flex items-center gap-2 text-slate-500">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Loading rider balance…
+                  Loading rider balanceâ€¦
                 </p>
               ) : balanceQuery.isError ? (
                 <p className="text-red-600">Could not load rider balance</p>
@@ -206,8 +207,9 @@ export function CashHandoverFormModal({ open, onClose, handover }: CashHandoverF
                     </span>
                   </p>
                   <p className="text-xs text-slate-500">
-                    Collected {money(balance.cashCollected)} − expenses{" "}
-                    {money(balance.riderPaidExpenses)} − handed over {money(balance.cashHandedOver)}
+                    Collected {money(balance.cashCollected)} âˆ’ expenses{" "}
+                    {money(balance.riderPaidExpenses)} âˆ’ handed over{" "}
+                    {money(balance.cashHandedOver)}
                   </p>
                 </div>
               ) : null}

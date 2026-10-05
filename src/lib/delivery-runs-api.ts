@@ -8,6 +8,7 @@ import type {
   DeliveryRunSummary,
   ListDeliveryRunsParams,
   UpdateDeliveryRunPayload,
+  WarehouseAvailabilityPayload,
 } from "@/types/delivery";
 
 function buildQuery(params?: ListDeliveryRunsParams): string {
@@ -30,6 +31,16 @@ export const deliveryRunsApi = {
     ),
 
   get: (id: string) => apiClient.get<ApiEnvelope<DeliveryRunDetail>>(`/delivery-runs/${id}`),
+
+  warehouseAvailability: (params?: { locationId?: string; excludeRunId?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.locationId) q.set("locationId", params.locationId);
+    if (params?.excludeRunId) q.set("excludeRunId", params.excludeRunId);
+    const s = q.toString();
+    return apiClient.get<ApiEnvelope<WarehouseAvailabilityPayload>>(
+      `/delivery-runs/warehouse-availability${s ? `?${s}` : ""}`
+    );
+  },
 
   create: (payload: CreateDeliveryRunPayload) =>
     apiClient.post<ApiEnvelope<DeliveryRunDetail>>("/delivery-runs", payload),

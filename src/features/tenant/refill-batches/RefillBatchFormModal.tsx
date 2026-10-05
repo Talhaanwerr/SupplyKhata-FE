@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo } from "react";
 import { useForm, useWatch } from "react-hook-form";
@@ -21,6 +21,7 @@ import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { refillBatchesApi } from "@/lib/refill-batches-api";
+import { localTodayYmd } from "@/lib/calendar-date";
 import { productsApi } from "@/lib/products-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
 import { INT_RE, MONEY_RE } from "@/lib/form-number";
@@ -43,7 +44,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localTodayYmd();
 }
 
 interface RefillBatchFormModalProps {
@@ -179,7 +180,7 @@ export function RefillBatchFormModal({ open, onClose, batch }: RefillBatchFormMo
           </FormField>
 
           <p className="text-sm text-slate-600">
-            Total cost: <span className="font-medium text-slate-900">{totalPreview ?? "—"}</span>
+            Total cost: <span className="font-medium text-slate-900">{totalPreview ?? "â€”"}</span>
           </p>
 
           <FormField label="Notes" error={errors.notes?.message}>

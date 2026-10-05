@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect } from "react";
 import Link from "next/link";
@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { paymentsApi } from "@/lib/payments-api";
+import { localTodayYmd } from "@/lib/calendar-date";
 import { customersApi } from "@/lib/customers-api";
 import { usersApi } from "@/lib/users-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
@@ -59,7 +60,7 @@ const schema = z
 type FormValues = z.infer<typeof schema>;
 
 function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+  return localTodayYmd();
 }
 
 export function RecordPaymentForm() {
@@ -179,9 +180,9 @@ export function RecordPaymentForm() {
               </p>
               <p className="mt-1 text-xl font-semibold text-slate-900">
                 {!customerId
-                  ? "—"
+                  ? "â€”"
                   : balanceQuery.isLoading
-                    ? "…"
+                    ? "â€¦"
                     : (balance ?? 0).toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
@@ -209,7 +210,7 @@ export function RecordPaymentForm() {
 
             <FormField label="Collected by" error={errors.collectedById?.message}>
               <Select {...register("collectedById")}>
-                <option value="">— Optional —</option>
+                <option value="">â€” Optional â€”</option>
                 {collectors.map((u) => (
                   <option key={u.id} value={u.id}>
                     {`${u.firstName} ${u.lastName}`.trim() || u.email}
@@ -230,7 +231,7 @@ export function RecordPaymentForm() {
 
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={save.isPending}>
-            {save.isPending ? "Saving…" : "Save Payment"}
+            {save.isPending ? "Savingâ€¦" : "Save Payment"}
           </Button>
           <Button type="button" variant="outline" asChild>
             <Link href="/payments">Cancel</Link>

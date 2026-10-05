@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -31,8 +31,10 @@ import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { customersApi } from "@/lib/customers-api";
+import { localTodayYmd } from "@/lib/calendar-date";
 import { deliveriesApi } from "@/lib/deliveries-api";
 import { deliveryRunsApi } from "@/lib/delivery-runs-api";
+import { inventoryApi } from "@/lib/inventory-api";
 import { plannedStopsApi } from "@/lib/planned-stops-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
 import { INT_RE, MONEY_RE, QTY_RE } from "@/lib/form-number";
@@ -46,6 +48,8 @@ import {
   DELIVERY_RUN_DETAIL_QUERY_KEY,
   DELIVERY_RUNS_QUERY_KEY,
   DELIVERY_RUN_SUMMARY_QUERY_KEY,
+  DELIVERY_RUN_WAREHOUSE_AVAIL_QUERY_KEY,
+  INVENTORY_QUERY_KEY,
   PAYMENTS_DASHBOARD_QUERY_KEY,
   PLANNED_STOPS_QUERY_KEY,
   PRODUCTS_QUERY_KEY,
@@ -70,6 +74,8 @@ const stockRowSchema = z.object({
   filledCount: z.string().regex(QTY_RE, "Units must be a non-negative number (max 3 decimals)"),
   filledPackagingCount: z.string().regex(INT_RE, "Cans must be a whole number").optional(),
   emptyCount: z.string().regex(INT_RE, "Empty count must be a whole number"),
+  /** Inventory ON â€” qty returned to warehouse on close (â‰¤ leftover). */
+  returnQty: z.string().regex(QTY_RE, "Return qty must be a non-negative number").optional(),
 });
 
 const deliverySchema = z
@@ -144,6 +150,7 @@ const editOpeningSchema = z.object({
     .min(1, "Opening cash is required")
     .regex(MONEY_RE, "Opening cash can have at most 2 decimal places"),
   notes: z.string().max(500).optional(),
+  loadLocationId: z.string().optional(),
   openingStock: z.array(stockRowSchema),
 });
 
@@ -152,7 +159,7 @@ type CloseFormValues = z.infer<typeof closeSchema>;
 type EditOpeningFormValues = z.infer<typeof editOpeningSchema>;
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localTodayYmd();
 }
 
 function money(value: number | null | undefined) {
@@ -169,6 +176,8 @@ export function DeliveryRunDetailView() {
   const { toast } = useToast();
   const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
   const { enabled: packHelpersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PACK_HELPERS);
+  const { enabled: inventoryEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.INVENTORY);
+  const { enabled: warehouseEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.WAREHOUSE);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [packHelper, setPackHelper] = useState<Record<string, { packs: string; loose: string }>>(
     {}
@@ -187,7 +196,7 @@ export function DeliveryRunDetailView() {
   // Override fields for the linked planned stop (editable in delivery form)
   const [plannedStopOverride, setPlannedStopOverride] = useState<{
     planDate: string;
-    items: Record<string, string>; // productId → qty string
+    items: Record<string, string>; // productId â†’ qty string
   } | null>(null);
 
   const runQuery = useQuery({
@@ -238,7 +247,7 @@ export function DeliveryRunDetailView() {
   });
   const editForm = useForm<EditOpeningFormValues>({
     resolver: zodResolver(editOpeningSchema),
-    defaultValues: { openingCash: "0", notes: "", openingStock: [] },
+    defaultValues: { openingCash: "0", notes: "", loadLocationId: "", openingStock: [] },
   });
   const { reset: resetDeliveryForm } = deliveryForm;
   const { reset: resetCloseForm } = closeForm;
@@ -246,6 +255,37 @@ export function DeliveryRunDetailView() {
   const selectedCustomerId = deliveryForm.watch("customerId");
   const watchedItems = deliveryForm.watch("items");
   const watchedClosingStock = closeForm.watch("closingStock");
+  const editLoadLocationId = editForm.watch("loadLocationId") ?? "";
+  const watchedEditOpeningStock = editForm.watch("openingStock") ?? [];
+
+  const locationsQuery = useQuery({
+    queryKey: [INVENTORY_QUERY_KEY, "locations", "edit-opening"],
+    queryFn: () => inventoryApi.listLocations({ isActive: true }),
+    enabled: !!inventoryEnabled && editOpen,
+  });
+  const locations = useMemo(() => locationsQuery.data?.data ?? [], [locationsQuery.data?.data]);
+  const showLocationPicker = !!inventoryEnabled && (!!warehouseEnabled || locations.length > 1);
+
+  const warehouseAvailQuery = useQuery({
+    queryKey: [
+      DELIVERY_RUN_WAREHOUSE_AVAIL_QUERY_KEY,
+      "edit",
+      runId,
+      editLoadLocationId || "default",
+    ],
+    queryFn: () =>
+      deliveryRunsApi.warehouseAvailability({
+        ...(editLoadLocationId ? { locationId: editLoadLocationId } : {}),
+        excludeRunId: runId,
+      }),
+    enabled: !!inventoryEnabled && editOpen && !!runId,
+  });
+  const availableQtyByProduct = (warehouseAvailQuery.data?.data?.items ?? []).reduce<
+    Record<string, number>
+  >((acc, row) => {
+    acc[row.productId] = row.availableQty;
+    return acc;
+  }, {});
   const customerDetailQuery = useQuery({
     queryKey: [CUSTOMER_DETAIL_QUERY_KEY, selectedCustomerId],
     queryFn: () => customersApi.get(selectedCustomerId),
@@ -350,9 +390,10 @@ export function DeliveryRunDetailView() {
         filledCount: "0",
         filledPackagingCount: "0",
         emptyCount: "0",
+        returnQty: "0",
       })),
     }));
-    // Only re-seed when the product set changes — not on form identity or query refetches.
+    // Only re-seed when the product set changes â€” not on form identity or query refetches.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- products read via productIdsKey
   }, [productIdsKey, resetDeliveryForm, resetCloseForm]);
 
@@ -401,6 +442,7 @@ export function DeliveryRunDetailView() {
     editForm.reset({
       openingCash: String(run.openingCash ?? 0),
       notes: run.notes ?? "",
+      loadLocationId: run.loadLocationId ?? "",
       openingStock: products.map((product) => {
         const stock = byProduct.get(product.id);
         return {
@@ -413,6 +455,13 @@ export function DeliveryRunDetailView() {
     });
     setEditOpen(true);
   }
+
+  useEffect(() => {
+    if (!editOpen || !inventoryEnabled || !locations.length) return;
+    if (editLoadLocationId) return;
+    const preferred = locations.find((loc) => loc.isDefault)?.id ?? locations[0]?.id ?? "";
+    if (preferred) editForm.setValue("loadLocationId", preferred, { shouldValidate: true });
+  }, [editOpen, inventoryEnabled, locations, editLoadLocationId, editForm]);
   const priceByProduct = useMemo(() => {
     const map = new Map<string, number>();
     const customer = customerDetailQuery.data?.data;
@@ -549,9 +598,26 @@ export function DeliveryRunDetailView() {
     }
   );
 
+  const leftoverByProduct = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of summary?.productDiscrepancies ?? []) {
+      map.set(row.productId, Math.max(0, row.expectedClosingFilled));
+    }
+    return map;
+  }, [summary?.productDiscrepancies]);
+
   const closeRun = useApiMutation(
-    (values: CloseFormValues) =>
-      deliveryRunsApi.close(runId, {
+    (values: CloseFormValues) => {
+      const returnToWarehouse = inventoryEnabled
+        ? values.closingStock
+            .map((stock) => ({
+              productId: stock.productId,
+              qty: Number(stock.returnQty || "0"),
+            }))
+            .filter((line) => line.qty > 0)
+        : [];
+
+      return deliveryRunsApi.close(runId, {
         closingCash: Number(values.closingCash),
         closingStock: values.closingStock.map((stock): DeliveryRunStockPayload => {
           const product = products.find((p) => p.id === stock.productId);
@@ -567,10 +633,14 @@ export function DeliveryRunDetailView() {
             emptyCount: allowEmpty ? Number(stock.emptyCount) : 0,
           };
         }),
-      }),
+        ...(returnToWarehouse.length > 0 ? { returnToWarehouse } : {}),
+      });
+    },
     {
       onSuccess: () => {
         invalidateRun();
+        qc.invalidateQueries({ queryKey: [INVENTORY_QUERY_KEY] });
+        qc.invalidateQueries({ queryKey: [DELIVERY_RUN_WAREHOUSE_AVAIL_QUERY_KEY] });
         setCloseOpen(false);
         toast({ title: "Delivery run closed", variant: "success" });
       },
@@ -578,11 +648,77 @@ export function DeliveryRunDetailView() {
     }
   );
 
+  function openCloseRun() {
+    const discByProduct = new Map(
+      (summary?.productDiscrepancies ?? []).map((row) => [row.productId, row])
+    );
+    closeForm.reset({
+      closingCash: String(summary?.expectedCash ?? run?.openingCash ?? 0),
+      closingStock: products.map((product) => {
+        const disc = discByProduct.get(product.id);
+        const leftover = Math.max(0, disc?.expectedClosingFilled ?? 0);
+        const returnQty = inventoryEnabled ? leftover : 0;
+        const closingFilled = inventoryEnabled ? Math.max(0, leftover - returnQty) : leftover;
+        return {
+          productId: product.id,
+          filledCount: String(closingFilled),
+          filledPackagingCount: "0",
+          emptyCount: String(Math.max(0, disc?.expectedClosingEmpty ?? 0)),
+          returnQty: String(returnQty),
+        };
+      }),
+    });
+    setCloseOpen(true);
+  }
+
+  function onReturnQtyChange(index: number, value: string) {
+    closeForm.setValue(`closingStock.${index}.returnQty`, value, { shouldValidate: true });
+    if (!inventoryEnabled) return;
+    const productId = closeForm.getValues(`closingStock.${index}.productId`);
+    const leftover = leftoverByProduct.get(productId) ?? 0;
+    const returnQty = QTY_RE.test(value) ? Number(value) : 0;
+    const closingFilled = Math.max(0, leftover - returnQty);
+    closeForm.setValue(`closingStock.${index}.filledCount`, String(closingFilled), {
+      shouldValidate: true,
+    });
+    closeForm.clearErrors("root");
+  }
+
+  function submitClose(values: CloseFormValues) {
+    if (inventoryEnabled) {
+      for (const [index, stock] of values.closingStock.entries()) {
+        const leftover = leftoverByProduct.get(stock.productId) ?? 0;
+        const returnQty = Number(stock.returnQty || "0");
+        const filled = Number(stock.filledCount);
+        const product = products.find((p) => p.id === stock.productId);
+        if (returnQty > leftover + 1e-9) {
+          closeForm.setError("root", {
+            message: `Return for "${product?.name ?? "product"}" cannot exceed leftover (${leftover})`,
+          });
+          closeForm.setError(`closingStock.${index}.returnQty`, {
+            message: `Max leftover: ${leftover}`,
+          });
+          return Promise.resolve();
+        }
+        if (filled + returnQty > leftover + 1e-9) {
+          closeForm.setError("root", {
+            message: `Closing filled plus return for "${product?.name ?? "product"}" exceeds leftover (${leftover})`,
+          });
+          return Promise.resolve();
+        }
+      }
+    }
+    return closeRun.mutateAsync(values);
+  }
+
   const updateOpening = useApiMutation(
     (values: EditOpeningFormValues) =>
       deliveryRunsApi.update(runId, {
         openingCash: Number(values.openingCash),
         notes: values.notes?.trim() || null,
+        ...(inventoryEnabled && values.loadLocationId
+          ? { loadLocationId: values.loadLocationId }
+          : {}),
         openingStock: values.openingStock.map((stock): DeliveryRunStockPayload => {
           const product = products.find((p) => p.id === stock.productId);
           const allowEmpty = product ? tracksContainers(product) : false;
@@ -601,6 +737,8 @@ export function DeliveryRunDetailView() {
     {
       onSuccess: () => {
         invalidateRun();
+        qc.invalidateQueries({ queryKey: [DELIVERY_RUN_WAREHOUSE_AVAIL_QUERY_KEY] });
+        qc.invalidateQueries({ queryKey: [INVENTORY_QUERY_KEY] });
         setEditOpen(false);
         toast({ title: "Opening details updated", variant: "success" });
       },
@@ -648,7 +786,15 @@ export function DeliveryRunDetailView() {
   }
 
   function submitEditOpening(values: EditOpeningFormValues) {
-    for (const stock of values.openingStock) {
+    const hasDeliveries = (run?.deliveries ?? []).some((d) => d.status !== "CANCELLED");
+    if (inventoryEnabled && hasDeliveries) {
+      editForm.setError("root", {
+        message: "Opening stock cannot be changed after deliveries when inventory is enabled",
+      });
+      return Promise.resolve();
+    }
+
+    for (const [index, stock] of values.openingStock.entries()) {
       const filled = Number(stock.filledCount);
       const delivered = deliveredFilledByProduct.get(stock.productId) ?? 0;
       const product = products.find((row) => row.id === stock.productId);
@@ -657,6 +803,18 @@ export function DeliveryRunDetailView() {
           message: `Opening filled for "${product?.name ?? "product"}" cannot be below already delivered (${delivered})`,
         });
         return Promise.resolve();
+      }
+      if (inventoryEnabled && filled > 0) {
+        const available = availableQtyByProduct[stock.productId] ?? 0;
+        if (filled > available + 1e-9) {
+          editForm.setError("root", {
+            message: `Only ${available} available for "${product?.name ?? "product"}"`,
+          });
+          editForm.setError(`openingStock.${index}.filledCount`, {
+            message: `Max available: ${available}`,
+          });
+          return Promise.resolve();
+        }
       }
       if (
         product &&
@@ -900,7 +1058,7 @@ export function DeliveryRunDetailView() {
                   </Button>
                 </PermissionGuard>
                 <PermissionGuard permission={PERMISSIONS.DELIVERY_RUNS.UPDATE}>
-                  <Button variant="outline" onClick={() => setCloseOpen(true)}>
+                  <Button variant="outline" onClick={openCloseRun}>
                     Close Run
                   </Button>
                 </PermissionGuard>
@@ -1053,13 +1211,13 @@ export function DeliveryRunDetailView() {
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p className="mb-3 text-sm font-medium text-slate-900">
                   Customer snapshot
-                  {selectedCustomer?.name ? ` — ${selectedCustomer.name}` : ""}
+                  {selectedCustomer?.name ? ` â€” ${selectedCustomer.name}` : ""}
                 </p>
                 {customerBalanceQuery.isLoading ||
                 (containersEnabled && customerContainersQuery.isLoading) ||
                 customerDetailQuery.isLoading ? (
                   <p className="text-sm text-slate-500">
-                    {containersEnabled ? "Loading dues and containers…" : "Loading dues…"}
+                    {containersEnabled ? "Loading dues and containersâ€¦" : "Loading duesâ€¦"}
                   </p>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -1070,7 +1228,7 @@ export function DeliveryRunDetailView() {
                           (selectedBalance ?? 0) > 0 ? "text-amber-700" : "text-slate-900"
                         }`}
                       >
-                        {selectedBalance == null ? "—" : money(selectedBalance)}
+                        {selectedBalance == null ? "â€”" : money(selectedBalance)}
                       </p>
                     </div>
                     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
@@ -1079,7 +1237,7 @@ export function DeliveryRunDetailView() {
                         {selectedCustomer?.promisedDueDate
                           ? `${new Date(selectedCustomer.promisedDueDate).toLocaleDateString()}${
                               selectedCustomer.promisedDueAmount != null
-                                ? ` · ${money(selectedCustomer.promisedDueAmount)}`
+                                ? ` Â· ${money(selectedCustomer.promisedDueAmount)}`
                                 : ""
                             }`
                           : "None"}
@@ -1096,7 +1254,7 @@ export function DeliveryRunDetailView() {
                               <li key={row.productId}>
                                 <span className="font-medium">{row.productName}</span>
                                 {": "}
-                                {row.balance} — collect empties if returning
+                                {row.balance} â€” collect empties if returning
                               </li>
                             ))}
                           </ul>
@@ -1108,7 +1266,7 @@ export function DeliveryRunDetailView() {
 
                 {/* Scheduled delivery card */}
                 {deliveryContextQuery.isLoading ? (
-                  <p className="mt-3 text-xs text-slate-400">Checking schedule…</p>
+                  <p className="mt-3 text-xs text-slate-400">Checking scheduleâ€¦</p>
                 ) : upcomingPlannedStop && plannedStopOverride ? (
                   <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
                     <div className="mb-2 flex items-center justify-between gap-2">
@@ -1218,12 +1376,12 @@ export function DeliveryRunDetailView() {
                           className={`text-xs ${available > 0 ? "text-slate-500" : "text-red-600"}`}
                         >
                           Available on run: {available} {unit}
-                          {needsCans ? ` · ${cansLeft} cans left` : ""}
+                          {needsCans ? ` Â· ${cansLeft} cans left` : ""}
                         </p>
                         {needsCans && (
                           <p className="text-xs text-slate-500">
                             Enter litres/kg sold, then how many filled cans you are giving (e.g. 40L
-                            in 3 cans → qty 40, cans 3).
+                            in 3 cans â†’ qty 40, cans 3).
                           </p>
                         )}
                       </div>
@@ -1376,8 +1534,9 @@ export function DeliveryRunDetailView() {
           <DialogHeader>
             <DialogTitle>Edit Opening</DialogTitle>
             <DialogDescription>
-              Fix opening cash or stock while the run is open. Opening filled cannot go below
-              already delivered quantities.
+              {inventoryEnabled
+                ? "Opening stock can be changed only before the first delivery. Load qty cannot exceed available stock."
+                : "Fix opening cash or stock while the run is open. Opening filled cannot go below already delivered quantities."}
             </DialogDescription>
           </DialogHeader>
           <form
@@ -1400,18 +1559,41 @@ export function DeliveryRunDetailView() {
             <FormField label="Notes" error={editForm.formState.errors.notes?.message}>
               <Input placeholder="Optional" {...editForm.register("notes")} />
             </FormField>
+            {showLocationPicker && (
+              <FormField
+                label="Load from location"
+                error={editForm.formState.errors.loadLocationId?.message}
+              >
+                <Select {...editForm.register("loadLocationId")}>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name}
+                      {loc.isDefault ? " (default)" : ""}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            )}
             {products.map((product, index) => {
               const delivered = deliveredFilledByProduct.get(product.id) ?? 0;
               const cansDelivered = deliveredCansByProduct.get(product.id) ?? 0;
               const needsCans = tracksContainers(product) && needsExplicitPackagingCount(product);
+              const warehouseQty = availableQtyByProduct[product.id] ?? 0;
+              const filledRaw = watchedEditOpeningStock[index]?.filledCount ?? "0";
+              const filledNum = QTY_RE.test(filledRaw) ? Number(filledRaw) : NaN;
+              const overAvailable =
+                inventoryEnabled && Number.isFinite(filledNum) && filledNum > warehouseQty + 1e-9;
               return (
                 <div key={product.id} className="rounded-xl border border-slate-200 p-3">
                   <input type="hidden" {...editForm.register(`openingStock.${index}.productId`)} />
-                  <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <p className="font-medium text-slate-900">{product.name}</p>
                     <p className="text-xs text-slate-500">
                       Already delivered: {delivered}
-                      {needsCans ? ` · ${cansDelivered} cans` : ""}
+                      {needsCans ? ` Â· ${cansDelivered} cans` : ""}
+                      {inventoryEnabled
+                        ? ` Â· Available: ${warehouseAvailQuery.isLoading ? "â€¦" : warehouseQty}`
+                        : ""}
                     </p>
                   </div>
                   <div
@@ -1429,7 +1611,10 @@ export function DeliveryRunDetailView() {
                           ? "Opening filled"
                           : `Opening units (${baseUnitLabel(product.baseUnit ?? "PCS")})`
                       }
-                      error={editForm.formState.errors.openingStock?.[index]?.filledCount?.message}
+                      error={
+                        editForm.formState.errors.openingStock?.[index]?.filledCount?.message ||
+                        (overAvailable ? `Max available: ${warehouseQty}` : undefined)
+                      }
                     >
                       <Input
                         inputMode={product.allowFractionalQty ? "decimal" : "numeric"}
@@ -1483,13 +1668,14 @@ export function DeliveryRunDetailView() {
           <DialogHeader>
             <DialogTitle>Close Delivery Run</DialogTitle>
             <DialogDescription>
-              Check opening cash and collected cash, then enter what the rider has now as closing
-              cash.
+              {inventoryEnabled
+                ? "Enter closing cash and stock. Return leftover units to the warehouse explicitly â€” nothing is returned automatically."
+                : "Check opening cash and collected cash, then enter what the rider has now as closing cash."}
             </DialogDescription>
           </DialogHeader>
           <form
             noValidate
-            onSubmit={closeForm.handleSubmit((v) => closeRun.mutateAsync(v))}
+            onSubmit={closeForm.handleSubmit((v) => submitClose(v))}
             className="space-y-4"
           >
             {closeForm.formState.errors.root && (
@@ -1529,21 +1715,58 @@ export function DeliveryRunDetailView() {
                 {...closeForm.register("closingCash")}
               />
             </FormField>
+            {inventoryEnabled && (
+              <p className="text-sm text-slate-600">
+                Leftover = opening âˆ’ delivered. Return qty defaults to all leftover; reduce it to
+                keep stock on the truck at close. Closing filled is kept as leftover âˆ’ return.
+              </p>
+            )}
             {products.map((product, index) => {
               const needsCans = tracksContainers(product) && needsExplicitPackagingCount(product);
+              const leftover = leftoverByProduct.get(product.id) ?? 0;
+              const returnRaw = watchedClosingStock[index]?.returnQty ?? "0";
+              const returnNum = QTY_RE.test(returnRaw) ? Number(returnRaw) : 0;
+              const overReturn = inventoryEnabled && returnNum > leftover + 1e-9;
               return (
                 <div key={product.id} className="rounded-xl border border-slate-200 p-3">
                   <input type="hidden" {...closeForm.register(`closingStock.${index}.productId`)} />
-                  <p className="mb-3 font-medium text-slate-900">{product.name}</p>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium text-slate-900">{product.name}</p>
+                    {inventoryEnabled && (
+                      <p className="text-xs text-slate-500">Leftover: {leftover}</p>
+                    )}
+                  </div>
                   <div
                     className={`grid gap-3 ${
-                      tracksContainers(product)
-                        ? needsCans
-                          ? "sm:grid-cols-3"
+                      inventoryEnabled
+                        ? tracksContainers(product)
+                          ? needsCans
+                            ? "sm:grid-cols-4"
+                            : "sm:grid-cols-3"
                           : "sm:grid-cols-2"
-                        : ""
+                        : tracksContainers(product)
+                          ? needsCans
+                            ? "sm:grid-cols-3"
+                            : "sm:grid-cols-2"
+                          : ""
                     }`}
                   >
+                    {inventoryEnabled && (
+                      <FormField
+                        label="Return to warehouse"
+                        error={
+                          closeForm.formState.errors.closingStock?.[index]?.returnQty?.message ||
+                          (overReturn ? `Max leftover: ${leftover}` : undefined)
+                        }
+                      >
+                        <Input
+                          inputMode={product.allowFractionalQty ? "decimal" : "numeric"}
+                          {...closeForm.register(`closingStock.${index}.returnQty`, {
+                            onChange: (e) => onReturnQtyChange(index, e.target.value),
+                          })}
+                        />
+                      </FormField>
+                    )}
                     <FormField
                       label={
                         tracksContainers(product) && product.baseUnit === "PCS"
@@ -1622,7 +1845,7 @@ export function DeliveryRunDetailView() {
             <DialogTitle>Delivery Detail</DialogTitle>
             <DialogDescription>
               {viewDelivery
-                ? `${viewDelivery.customer.name} — ${new Date(viewDelivery.deliveryDate).toLocaleDateString()}`
+                ? `${viewDelivery.customer.name} â€” ${new Date(viewDelivery.deliveryDate).toLocaleDateString()}`
                 : ""}
             </DialogDescription>
           </DialogHeader>
@@ -1736,7 +1959,7 @@ export function DeliveryRunDetailView() {
             </DialogDescription>
           </DialogHeader>
           {dailyStopsQuery.isLoading ? (
-            <p className="text-sm text-slate-500">Loading today&apos;s stops…</p>
+            <p className="text-sm text-slate-500">Loading today&apos;s stopsâ€¦</p>
           ) : (dailyStopsQuery.data?.data?.items ?? []).length === 0 ? (
             <p className="text-sm text-slate-500">
               No planned stops for today. Set up customer schedules or add manual stops from the
@@ -1771,7 +1994,7 @@ export function DeliveryRunDetailView() {
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-slate-900">{stop.customerName}</p>
                       <p className="text-xs text-slate-500">
-                        {stop.areaName ?? "—"} · {stop.customerPhone}
+                        {stop.areaName ?? "â€”"} Â· {stop.customerPhone}
                       </p>
                       {stop.items.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">

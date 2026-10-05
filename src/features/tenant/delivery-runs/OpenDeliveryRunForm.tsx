@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -17,6 +17,8 @@ import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { useFeatureFlag } from "@/hooks/use-feature-flag";
 import { deliveryRunsApi } from "@/lib/delivery-runs-api";
+import { localTodayYmd } from "@/lib/calendar-date";
+import { inventoryApi } from "@/lib/inventory-api";
 import { productsApi } from "@/lib/products-api";
 import { refillBatchesApi } from "@/lib/refill-batches-api";
 import { staffApi, type StaffMember } from "@/lib/staff-api";
@@ -24,6 +26,8 @@ import { vehiclesApi } from "@/lib/vehicles-api";
 import { getSafeErrorMessage } from "@/lib/safe-error";
 import {
   DELIVERY_RUNS_QUERY_KEY,
+  DELIVERY_RUN_WAREHOUSE_AVAIL_QUERY_KEY,
+  INVENTORY_QUERY_KEY,
   PRODUCTS_QUERY_KEY,
   REFILL_AVAILABLE_QUERY_KEY,
   STAFF_RIDERS_QUERY_KEY,
@@ -36,7 +40,7 @@ import type { RefillBatch } from "@/types/refill-batches";
 import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 import type { Vehicle } from "@/types/vehicles";
 
-/** Stable fallbacks — `?? []` in render recreates arrays every time and loops reset. */
+/** Stable fallbacks â€” `?? []` in render recreates arrays every time and loops reset. */
 const EMPTY_PRODUCTS: Product[] = [];
 const EMPTY_RIDERS: StaffMember[] = [];
 const EMPTY_VEHICLES: Vehicle[] = [];
@@ -58,13 +62,14 @@ const schema = z.object({
     .min(1, "Opening cash is required")
     .regex(MONEY_RE, "Opening cash can have at most 2 decimal places"),
   notes: z.string().max(500).optional(),
+  loadLocationId: z.string().optional(),
   openingStock: z.array(stockSchema).min(1, "At least one product is required"),
 });
 
 type FormValues = z.infer<typeof schema>;
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localTodayYmd();
 }
 
 export function OpenDeliveryRunForm() {
@@ -73,6 +78,8 @@ export function OpenDeliveryRunForm() {
   const { toast } = useToast();
   const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
   const { enabled: plantFillEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PLANT_FILL);
+  const { enabled: inventoryEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.INVENTORY);
+  const { enabled: warehouseEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.WAREHOUSE);
   const [loadFromBatchState, setLoadFromBatchState] = useState<{
     productIdsKey: string;
     flags: Record<number, boolean>;
@@ -90,10 +97,16 @@ export function OpenDeliveryRunForm() {
     queryKey: [VEHICLES_QUERY_KEY, "active-for-delivery-runs"],
     queryFn: () => vehiclesApi.list({ status: "ACTIVE", limit: 100 }),
   });
+  const locationsQuery = useQuery({
+    queryKey: [INVENTORY_QUERY_KEY, "locations", "open-run"],
+    queryFn: () => inventoryApi.listLocations({ isActive: true }),
+    enabled: !!inventoryEnabled,
+  });
 
   const products = productsQuery.data?.data ?? EMPTY_PRODUCTS;
   const riders = ridersQuery.data?.data?.items ?? EMPTY_RIDERS;
   const vehicles = vehiclesQuery.data?.data?.items ?? EMPTY_VEHICLES;
+  const locations = useMemo(() => locationsQuery.data?.data ?? [], [locationsQuery.data?.data]);
   const productIdsKey = products.map((p) => p.id).join(",");
   const loadFromBatch =
     loadFromBatchState.productIdsKey === productIdsKey ? loadFromBatchState.flags : {};
@@ -115,11 +128,29 @@ export function OpenDeliveryRunForm() {
       date: today(),
       openingCash: "0",
       notes: "",
+      loadLocationId: "",
       openingStock: [],
     },
   });
 
   const openingStock = useWatch({ control, name: "openingStock" }) ?? [];
+  const loadLocationId = useWatch({ control, name: "loadLocationId" }) ?? "";
+
+  const warehouseAvailQuery = useQuery({
+    queryKey: [DELIVERY_RUN_WAREHOUSE_AVAIL_QUERY_KEY, "create", loadLocationId || "default"],
+    queryFn: () =>
+      deliveryRunsApi.warehouseAvailability(
+        loadLocationId ? { locationId: loadLocationId } : undefined
+      ),
+    enabled: !!inventoryEnabled,
+  });
+  const availableQtyByProduct = (warehouseAvailQuery.data?.data?.items ?? []).reduce<
+    Record<string, number>
+  >((acc, row) => {
+    acc[row.productId] = row.availableQty;
+    return acc;
+  }, {});
+  const showLocationPicker = !!inventoryEnabled && (!!warehouseEnabled || locations.length > 1);
 
   const availableQueries = useQueries({
     queries: products.map((product) => ({
@@ -149,7 +180,7 @@ export function OpenDeliveryRunForm() {
         refillBatchId: "",
       })),
     }));
-    // Only re-seed when the product set changes — not on query refetch array identity.
+    // Only re-seed when the product set changes â€” not on query refetch array identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- products via productIdsKey
   }, [productIdsKey, reset]);
 
@@ -166,6 +197,12 @@ export function OpenDeliveryRunForm() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- vehicles via vehicleIdsKey
   }, [vehicleIdsKey, setValue]);
+
+  useEffect(() => {
+    if (!inventoryEnabled || !locations.length || loadLocationId) return;
+    const preferred = locations.find((loc) => loc.isDefault)?.id ?? locations[0]?.id ?? "";
+    if (preferred) setValue("loadLocationId", preferred, { shouldValidate: true });
+  }, [inventoryEnabled, locations, loadLocationId, setValue]);
 
   const applyBatch = (index: number, batchId: string) => {
     const productId = openingStock[index]?.productId;
@@ -198,6 +235,9 @@ export function OpenDeliveryRunForm() {
         date: values.date,
         openingCash: Number(values.openingCash),
         notes: values.notes?.trim() || null,
+        ...(inventoryEnabled && values.loadLocationId
+          ? { loadLocationId: values.loadLocationId }
+          : {}),
         openingStock: values.openingStock.map((stock) => {
           const product = products.find((p) => p.id === stock.productId);
           const allowEmpty = containersEnabled && (product?.isReturnable ?? false);
@@ -219,6 +259,8 @@ export function OpenDeliveryRunForm() {
       onSuccess: (res) => {
         qc.invalidateQueries({ queryKey: [DELIVERY_RUNS_QUERY_KEY] });
         qc.invalidateQueries({ queryKey: [REFILL_AVAILABLE_QUERY_KEY] });
+        qc.invalidateQueries({ queryKey: [DELIVERY_RUN_WAREHOUSE_AVAIL_QUERY_KEY] });
+        qc.invalidateQueries({ queryKey: [INVENTORY_QUERY_KEY] });
         toast({ title: "Delivery run opened", variant: "success" });
         if (res.data) router.push(`/delivery-runs/${res.data.id}`);
       },
@@ -229,10 +271,31 @@ export function OpenDeliveryRunForm() {
     }
   );
 
+  function submitOpen(values: FormValues) {
+    if (inventoryEnabled) {
+      for (const [index, stock] of values.openingStock.entries()) {
+        const filled = Number(stock.filledCount);
+        if (!(filled > 0)) continue;
+        const available = availableQtyByProduct[stock.productId] ?? 0;
+        const product = products.find((p) => p.id === stock.productId);
+        if (filled > available + 1e-9) {
+          setError("root", {
+            message: `Only ${available} available for "${product?.name ?? "product"}"`,
+          });
+          setError(`openingStock.${index}.filledCount`, {
+            message: `Max available: ${available}`,
+          });
+          return Promise.resolve();
+        }
+      }
+    }
+    return save.mutateAsync(values);
+  }
+
   const loading = productsQuery.isLoading || ridersQuery.isLoading || vehiclesQuery.isLoading;
 
   return (
-    <form noValidate onSubmit={handleSubmit((v) => save.mutateAsync(v))} className="space-y-6">
+    <form noValidate onSubmit={handleSubmit((v) => submitOpen(v))} className="space-y-6">
       {errors.root && (
         <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errors.root.message}</p>
       )}
@@ -271,6 +334,18 @@ export function OpenDeliveryRunForm() {
           <FormField label="Notes" error={errors.notes?.message}>
             <Input placeholder="Optional" {...register("notes")} />
           </FormField>
+          {showLocationPicker && (
+            <FormField label="Load from location" error={errors.loadLocationId?.message}>
+              <Select {...register("loadLocationId")}>
+                {locations.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name}
+                    {loc.isDefault ? " (default)" : ""}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          )}
         </CardContent>
       </Card>
 
@@ -288,10 +363,22 @@ export function OpenDeliveryRunForm() {
               {products.map((product, index) => {
                 const available = availableByProduct[product.id] ?? [];
                 const useBatch = !!loadFromBatch[index];
+                const warehouseQty = availableQtyByProduct[product.id] ?? 0;
+                const filledRaw = openingStock[index]?.filledCount ?? "0";
+                const filledNum = QTY_RE.test(filledRaw) ? Number(filledRaw) : NaN;
+                const overAvailable =
+                  inventoryEnabled && Number.isFinite(filledNum) && filledNum > warehouseQty + 1e-9;
                 return (
                   <div key={product.id} className="rounded-lg border border-slate-200 p-3">
                     <input type="hidden" {...register(`openingStock.${index}.productId`)} />
-                    <p className="mb-3 font-medium text-slate-900">{product.name}</p>
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-slate-900">{product.name}</p>
+                      {inventoryEnabled && (
+                        <p className="text-xs text-slate-500">
+                          Available: {warehouseAvailQuery.isLoading ? "â€¦" : warehouseQty}
+                        </p>
+                      )}
+                    </div>
 
                     {plantFillEnabled && (
                       <label className="mb-3 flex items-center gap-2 text-sm text-slate-700">
@@ -325,8 +412,8 @@ export function OpenDeliveryRunForm() {
                           <option value="">Select batch with remaining cans</option>
                           {available.map((batch) => (
                             <option key={batch.id} value={batch.id}>
-                              {new Date(batch.date).toLocaleDateString()} · rem{" "}
-                              {batch.remainingCount} · cost {batch.costPerUnit.toFixed(2)}
+                              {new Date(batch.date).toLocaleDateString()} Â· rem{" "}
+                              {batch.remainingCount} Â· cost {batch.costPerUnit.toFixed(2)}
                             </option>
                           ))}
                         </Select>
@@ -353,7 +440,10 @@ export function OpenDeliveryRunForm() {
                             ? "Filled cans"
                             : `Units loaded (${baseUnitLabel(product.baseUnit ?? "PCS")})`
                         }
-                        error={errors.openingStock?.[index]?.filledCount?.message}
+                        error={
+                          errors.openingStock?.[index]?.filledCount?.message ||
+                          (overAvailable ? `Max available: ${warehouseQty}` : undefined)
+                        }
                       >
                         <Input
                           inputMode={product.allowFractionalQty ? "decimal" : "numeric"}

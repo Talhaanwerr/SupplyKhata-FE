@@ -8,7 +8,11 @@ export type ReportType =
   | "rider-collection"
   | "vehicle-performance"
   | "collection-performance"
-  | "expenses";
+  | "expenses"
+  | "stock-on-hand"
+  | "purchases-by-vendor"
+  | "production-yield"
+  | "raw-consumption";
 
 /** Sales channel for daily / monthly / product reports (POS deferred). */
 export type ReportSalesChannel = "delivery" | "orders";
@@ -177,4 +181,85 @@ export interface CollectionPerformanceReport {
     collectedAmount: number;
     customersVisited: number;
   }>;
+}
+
+export interface StockOnHandReport {
+  inventoryEnabled: boolean;
+  rawMaterialsEnabled: boolean;
+  locationId: string | null;
+  finished: Array<{
+    productId: string;
+    productName: string;
+    sku: string | null;
+    baseUnit: string;
+    locationId: string;
+    locationName: string;
+    quantity: number;
+  }>;
+  raw: Array<{
+    rawMaterialId: string;
+    rawMaterialName: string;
+    sku: string | null;
+    unit: string;
+    locationId: string;
+    locationName: string;
+    quantity: number;
+  }>;
+  notes: string[];
+}
+
+export interface PurchasesByVendorReport {
+  vendorsEnabled: boolean;
+  purchaseOrdersEnabled: boolean;
+  vendorBillsEnabled: boolean;
+  from: string | null;
+  to: string | null;
+  vendors: Array<{
+    vendorId: string;
+    vendorName: string;
+    phone: string | null;
+    poCount: number;
+    poOrderedAmount: number;
+    billCount: number;
+    billTotal: number;
+    billPaid: number;
+    billOutstanding: number;
+  }>;
+  notes: string[];
+}
+
+export interface ProductionYieldReport {
+  productionEnabled: boolean;
+  from: string | null;
+  to: string | null;
+  orders: Array<{
+    id: string;
+    productId: string;
+    productName: string;
+    sku: string | null;
+    plannedQty: number;
+    actualQty: number;
+    scrapQty: number;
+    varianceQty: number;
+    varianceNote: string | null;
+    scrapReason: string | null;
+    completedAt: string | null;
+  }>;
+  notes: string[];
+}
+
+export interface RawConsumptionReport {
+  productionEnabled: boolean;
+  rawMaterialsEnabled: boolean;
+  from: string | null;
+  to: string | null;
+  lines: Array<{
+    rawMaterialId: string;
+    rawMaterialName: string;
+    unit: string;
+    sku: string | null;
+    qtyConsumed: number;
+    orderCount: number;
+  }>;
+  notes: string[];
 }

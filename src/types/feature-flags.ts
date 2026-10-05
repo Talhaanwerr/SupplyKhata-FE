@@ -46,6 +46,13 @@ export const FEATURE_FLAG_SLUGS = {
   ORDERS: "orders",
   POS: "pos",
   INVOICES: "invoices",
+  INVENTORY: "inventory",
+  WAREHOUSE: "warehouse",
+  VENDORS: "vendors",
+  RAW_MATERIALS: "raw-materials",
+  PURCHASE_ORDERS: "purchase-orders",
+  VENDOR_BILLS: "vendor-bills",
+  PRODUCTION: "production",
 } as const;
 
 export type FeatureFlagsListResponse = ApiEnvelope<(FeatureFlagItem | TenantFeatureFlagItem)[]>;

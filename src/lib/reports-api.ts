@@ -10,9 +10,13 @@ import type {
   ExpensesReport,
   MonthlySummaryReport,
   ProductPerformanceReport,
+  ProductionYieldReport,
+  PurchasesByVendorReport,
+  RawConsumptionReport,
   ReportSalesChannel,
   ReportType,
   RiderCollectionReport,
+  StockOnHandReport,
   VehiclePerformanceReport,
   CollectionPerformanceReport,
 } from "@/types/reports";
@@ -64,6 +68,24 @@ export const reportsApi = {
   expenses: (from?: string, to?: string, search?: string) =>
     apiClient.get<ApiEnvelope<ExpensesReport>>(`/reports/expenses${qs({ from, to, search })}`),
 
+  stockOnHand: (locationId?: string) =>
+    apiClient.get<ApiEnvelope<StockOnHandReport>>(`/reports/stock-on-hand${qs({ locationId })}`),
+
+  purchasesByVendor: (from?: string, to?: string, vendorId?: string) =>
+    apiClient.get<ApiEnvelope<PurchasesByVendorReport>>(
+      `/reports/purchases-by-vendor${qs({ from, to, vendorId })}`
+    ),
+
+  productionYield: (from?: string, to?: string, productId?: string) =>
+    apiClient.get<ApiEnvelope<ProductionYieldReport>>(
+      `/reports/production-yield${qs({ from, to, productId })}`
+    ),
+
+  rawConsumption: (from?: string, to?: string, productId?: string, rawMaterialId?: string) =>
+    apiClient.get<ApiEnvelope<RawConsumptionReport>>(
+      `/reports/raw-consumption${qs({ from, to, productId, rawMaterialId })}`
+    ),
+
   exportFile: async (params: {
     type: ReportType;
     format: "csv" | "pdf";
@@ -77,6 +99,10 @@ export const reportsApi = {
     vehicleId?: string;
     search?: string;
     channel?: ReportSalesChannel;
+    locationId?: string;
+    vendorId?: string;
+    productId?: string;
+    rawMaterialId?: string;
   }) => {
     const query = qs(params);
     const token = tokenManager.getAccessToken();

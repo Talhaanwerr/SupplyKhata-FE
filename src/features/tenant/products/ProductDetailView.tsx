@@ -26,6 +26,7 @@ import {
 import { FEATURE_FLAG_SLUGS } from "@/types/feature-flags";
 import { ProductFormModal } from "./ProductFormModal";
 import { UpdateCostModal } from "./UpdateCostModal";
+import { ProductBomSection } from "@/features/tenant/bom/ProductBomSection";
 import type { ProductCost } from "@/types/products";
 import { baseUnitLabel } from "@/types/products";
 
@@ -45,6 +46,9 @@ export function ProductDetailView() {
   const { toast } = useToast();
   const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
   const { enabled: packHelpersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PACK_HELPERS);
+  const { enabled: productionEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PRODUCTION);
+  const { enabled: inventoryEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.INVENTORY);
+  const { enabled: rawEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RAW_MATERIALS);
   const [editOpen, setEditOpen] = useState(false);
   const [costOpen, setCostOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -212,6 +216,22 @@ export function ProductDetailView() {
           </div>
         )}
       </div>
+
+      {productionEnabled && (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Recipe / BOM</h2>
+            <p className="text-sm text-slate-500">Raw materials consumed per finished unit.</p>
+          </div>
+          {(!inventoryEnabled || !rawEnabled) && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Enable Inventory + Raw Materials for production stock posts. Recipe edit still works
+              with Production on.
+            </div>
+          )}
+          <ProductBomSection productId={productId} productName={product.name} />
+        </div>
+      )}
 
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">

@@ -18,6 +18,8 @@ export interface Product {
   containerCapacity: number | null;
   allowFractionalQty: boolean;
   hasPackHelper: boolean;
+  /** Low-stock threshold (base units); inventory module. */
+  reorderLevel: number | null;
   currentCost: number | null;
   createdAt: string;
   updatedAt: string;
@@ -55,6 +57,7 @@ export interface CreateProductPayload {
   containerType?: string | null;
   isActive?: boolean;
   initialCostPerUnit?: number;
+  reorderLevel?: number | null;
 }
 
 export interface UpdateProductPayload {
@@ -71,6 +74,7 @@ export interface UpdateProductPayload {
   isReturnable?: boolean;
   containerType?: string | null;
   isActive?: boolean;
+  reorderLevel?: number | null;
 }
 
 export interface CreateProductCostPayload {

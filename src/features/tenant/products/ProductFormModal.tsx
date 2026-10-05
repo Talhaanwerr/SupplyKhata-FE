@@ -45,6 +45,7 @@ const schema = z
     containerType: z.string().max(60).optional(),
     isActive: z.boolean(),
     initialCostPerUnit: z.string().optional(),
+    reorderLevel: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     refineNonNegativeMoney(val.volume, "Volume", ctx, "volume");
@@ -53,6 +54,7 @@ const schema = z
     });
     refineNonNegativeMoney(val.initialCostPerUnit, "Initial cost", ctx, "initialCostPerUnit");
     refineNonNegativeMoney(val.containerCapacity, "Container capacity", ctx, "containerCapacity");
+    refineNonNegativeMoney(val.reorderLevel, "Reorder level", ctx, "reorderLevel");
 
     const packRaw = val.unitsPerPack?.trim() ?? "";
     const labelRaw = val.packLabel?.trim() ?? "";
@@ -92,6 +94,7 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
   const { toast } = useToast();
   const { enabled: containersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.RETURNABLE_CONTAINERS);
   const { enabled: packHelpersEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.PACK_HELPERS);
+  const { enabled: inventoryEnabled } = useFeatureFlag(FEATURE_FLAG_SLUGS.INVENTORY);
 
   const {
     register,
@@ -118,6 +121,7 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
       containerType: "",
       isActive: true,
       initialCostPerUnit: "",
+      reorderLevel: "",
     },
   });
 
@@ -150,6 +154,8 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
         containerType: containersEnabled ? (product.containerType ?? "") : "",
         isActive: product.isActive,
         initialCostPerUnit: "",
+        reorderLevel:
+          inventoryEnabled && product.reorderLevel != null ? String(product.reorderLevel) : "",
       });
     } else {
       reset({
@@ -167,9 +173,10 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
         containerType: "",
         isActive: true,
         initialCostPerUnit: "",
+        reorderLevel: "",
       });
     }
-  }, [open, product, reset, containersEnabled, packHelpersEnabled]);
+  }, [open, product, reset, containersEnabled, packHelpersEnabled, inventoryEnabled]);
 
   const save = useApiMutation(
     async (values: FormValues) => {
@@ -194,6 +201,14 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
         isReturnable: containersEnabled ? values.isReturnable : false,
         containerType: containersEnabled ? values.containerType?.trim() || null : null,
         isActive: values.isActive,
+        ...(inventoryEnabled
+          ? {
+              reorderLevel: (() => {
+                const n = parseOptionalNumber(values.reorderLevel);
+                return n ?? null;
+              })(),
+            }
+          : {}),
       };
 
       if (isEdit && product) {
@@ -303,6 +318,21 @@ export function ProductFormModal({ open, onClose, product }: ProductFormModalPro
           <FormField label="SKU" error={errors.sku?.message}>
             <Input placeholder="Optional" {...register("sku")} />
           </FormField>
+
+          {inventoryEnabled && (
+            <FormField label="Reorder level (optional)" error={errors.reorderLevel?.message}>
+              <Input
+                type="number"
+                step="any"
+                min="0"
+                placeholder="e.g. 10"
+                {...register("reorderLevel")}
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Inventory flags stock as low when on-hand ≤ this level (base units).
+              </p>
+            </FormField>
+          )}
 
           {packHelpersEnabled && (
             <div className="space-y-3 rounded-lg border border-slate-200 p-3">

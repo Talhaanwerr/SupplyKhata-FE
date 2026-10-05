@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -22,6 +22,7 @@ import { FormField } from "@/components/ui/form-field";
 import { useToast } from "@/components/ui/toast";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import { collectionsApi } from "@/lib/collections-api";
+import { localTodayYmd } from "@/lib/calendar-date";
 import { reportsApi } from "@/lib/reports-api";
 import { areasApi } from "@/lib/areas-api";
 import { staffApi } from "@/lib/staff-api";
@@ -44,7 +45,7 @@ import { canAccessAny } from "@/lib/can-access";
 import { useAuthStore } from "@/store/auth-store";
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localTodayYmd();
 }
 
 function money(n: number) {
@@ -260,7 +261,7 @@ export function CollectionsView() {
             </div>
 
             {listQuery.isLoading ? (
-              <p className="text-sm text-slate-500">Loading…</p>
+              <p className="text-sm text-slate-500">Loadingâ€¦</p>
             ) : listQuery.isError ? (
               <ErrorState title="Failed to load" onRetry={() => listQuery.refetch()} />
             ) : items.length === 0 ? (
@@ -293,7 +294,7 @@ export function CollectionsView() {
                         </td>
                         <td className="px-4 py-3 text-slate-600">{row.areaName}</td>
                         <td className="px-4 py-3">
-                          <span className="text-slate-700">{row.dueDate ?? "—"}</span>
+                          <span className="text-slate-700">{row.dueDate ?? "â€”"}</span>
                           {row.daysOverdue > 0 && (
                             <span className="mt-0.5 block text-xs text-red-600">
                               {row.daysOverdue}d overdue
@@ -346,7 +347,7 @@ export function CollectionsView() {
               )}
             </div>
             {perfQuery.isLoading ? (
-              <p className="text-sm text-slate-500">Loading…</p>
+              <p className="text-sm text-slate-500">Loadingâ€¦</p>
             ) : perfQuery.isError ? (
               <ErrorState title="Failed to load" onRetry={() => perfQuery.refetch()} />
             ) : (
@@ -414,7 +415,7 @@ export function CollectionsView() {
       <Dialog open={!!selected} onOpenChange={(v) => !v && setSelected(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Collect / Update — {selected?.name}</DialogTitle>
+            <DialogTitle>Collect / Update â€” {selected?.name}</DialogTitle>
             <DialogDescription>
               Balance {selected ? money(selected.balance) : ""}. Partial payments and promises are
               OK.
